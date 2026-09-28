@@ -12,6 +12,7 @@
     "match": "tsx src/cli/match.ts",
     "bench": "tsx src/cli/bench.ts",
     "gauntlet": "tsx src/cli/gauntlet.ts",
+    "train": "tsx src/cli/train.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
