@@ -5,7 +5,7 @@ faster than real time, runs the evaluation gauntlet that decides whether a snake
 and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the training dashboard
 and the experiment logs.
 
-**Status:** plays seeded headless matches (slice 09, #2). The gauntlet is next (#1); no trainers yet.
+**Status:** plays seeded headless matches (slice 09, #2) and runs the gauntlet (#3). No trainers yet.
 
 ## Stack and layout
 
@@ -15,7 +15,12 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/match.ts`: `playMatch`, one round between 1 to 4 bots from a seed. Everything the rest of
   the lab plays through. Its loop follows `SnakeRoom`'s order exactly (record every bot's
   snapshots, steer every live bot, run the engine's tick), so change it only when the room changes.
-- `src/cli/`: the `match` and `bench` commands, and the options they share.
+- `src/gauntlet.ts`: the gauntlet. `loadCandidate` (roster id or brain file), `opponentsFor`,
+  `runGauntlet` (the grid of opponent × delay 0-4 × mode, N seeds each played in both seats) and
+  `verdict` (the bar: at least 60% of matches won against the rookie at delay 2, both modes; draws
+  count as not winning). `promote` will use it.
+- `src/cli/`: the `match`, `bench` and `gauntlet` commands, and the options they share.
+- `docs/benchmarks/`: gauntlet results worth keeping, each with its command, engine tag and date.
 - `test/`: `*.test.ts`, one per module.
 
 ## Commands
@@ -27,6 +32,11 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   printed. `--events` lists every event; `--json` prints the whole result. `--help` for the rest.
 - `npm run bench -- --matches 500 --players rookie,rookie`: plays seeds one after another and
   prints ticks per second. Run it before and after a change that could slow matches down.
+- `npm run gauntlet -- rookie` (or a path to a brain file): plays the candidate against the rookie
+  and every other roster snake, prints win, loss and draw rates per opponent, delay and mode, and
+  the verdict. Exits 0 on a pass and 1 on a fail. `--seeds` (default 100), `--base-seed` (default 1),
+  `--fps` (default 8). On the Pi it plays about 14 matches a second: about 5 minutes for the rookie
+  at the defaults.
 
 ## Determinism
 
