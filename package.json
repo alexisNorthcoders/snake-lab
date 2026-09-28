@@ -1,0 +1,25 @@
+{
+  "private": true,
+  "name": "snake-lab",
+  "version": "0.1.0",
+  "description": "Training ground for the snake game's AI opponents: headless matches, the gauntlet and the trainers",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">= 20.9.0"
+  },
+  "scripts": {
+    "match": "tsx src/cli/match.ts",
+    "bench": "tsx src/cli/bench.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "snake-colyseus": "github:alexisNorthcoders/snake-colyseus#engine-v3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
