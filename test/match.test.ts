@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { roundTicks } from "snake-colyseus/engine";
+import { FoodPlacement, layFood, mulberry32, roundTicks } from "snake-colyseus/engine";
 import { BotView, Decider, pickBot } from "snake-colyseus/bots";
 import { MatchOptions, Seat, playMatch } from "../src/match.ts";
 
@@ -46,6 +46,14 @@ describe("playMatch", () => {
     const first = playMatch(options({ seed: 1 }));
     const other = playMatch(options({ seed: 2 }));
     assert.notDeepEqual(other, first);
+  });
+
+  it("lays the food from the seed first, as the room does", () => {
+    const watcher = spy();
+    playMatch(options({ seed: 99, seats: [{ player: { name: "Watcher", decider: watcher.decider }, delay: 0 }] }));
+    const room = { foodCoordinates: [] as FoodPlacement[] };
+    layFood(room, mulberry32(99), (placement) => placement);
+    assert.deepEqual(watcher.views[0].food.map(({ x, y, type }) => ({ x, y, type })), room.foodCoordinates.map(({ x, y, type }) => ({ x, y, type })));
   });
 
   it("plays rookie against Dummy to the end in timed and in endless", () => {

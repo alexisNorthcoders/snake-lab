@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
-import { playMatch } from "../match.ts";
-import { exit, matchArgs, matchArgsHelp, mode, number, orExit, seats } from "./args.ts";
+import { checkMatchOptions, playMatch } from "../match.ts";
+import { exit, matchArgs, matchArgsHelp, matchOptions, orExit, parseNumber } from "./args.ts";
 
 const usage = `Plays many matches, one seed after another, and prints ticks per second.
 
@@ -17,17 +17,11 @@ const args = orExit(usage, () => parseArgs({
 if (args.help) exit(usage, 0);
 
 const run = orExit(usage, () => {
-  const run = {
-    matches: number("matches", args.matches),
-    seed: number("seed", args.seed),
-    seats: seats(args.players, args.delays),
-    mode: mode(args.mode),
-    fps: number("fps", args.fps)
-  };
-  if (!Number.isInteger(run.matches) || run.matches < 1) throw new Error(`--matches must be a whole number above 0, not ${run.matches}`);
-  // Checks the options once, before the clock starts.
-  playMatch({ ...run, keepEvents: false });
-  return run;
+  const matches = parseNumber("matches", args.matches);
+  if (!Number.isInteger(matches) || matches < 1) throw new Error(`--matches must be a whole number above 0, not ${matches}`);
+  const options = matchOptions(args);
+  checkMatchOptions(options);
+  return { ...options, matches };
 });
 
 let ticks = 0;

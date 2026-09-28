@@ -66,7 +66,7 @@ export interface MatchResult {
 }
 
 interface Bot {
-  player: PlayerShape<Cell>;
+  shape: PlayerShape<Cell>;
   name: string;
   decider: Decider;
   snapshots: Snapshots;
@@ -88,7 +88,8 @@ const newSnake = (): SnakeShape<Cell> => ({
 
 const deciderOf = (player: Player): Decider => ("kind" in player ? deciderFor(player) : player.decider);
 
-const check = (options: MatchOptions) => {
+/** Throws, saying why, if `options` isn't a match that can be played. */
+export const checkMatchOptions = (options: MatchOptions) => {
   const { seed, seats, fps } = options;
   if (!Number.isInteger(seed) || seed < 0 || seed >= 2 ** 32) {
     throw new Error(`seed must be a whole number in [0, 2^32), not ${seed}`);
@@ -115,19 +116,19 @@ const check = (options: MatchOptions) => {
  * starves, and one that keeps eating fills the board.
  */
 export function playMatch(options: MatchOptions): MatchResult {
-  check(options);
+  checkMatchOptions(options);
   const { seed, seats, mode, fps, keepEvents = true } = options;
 
   const rng = mulberry32(seed);
   const bots: Bot[] = seats.map(({ player, delay }, i) => ({
-    player: { id: `seat${i}`, snake: newSnake() },
+    shape: { id: `seat${i}`, snake: newSnake() },
     name: player.name,
     decider: deciderOf(player),
     snapshots: new Snapshots(delay),
     decisionErrors: 0
   }));
   const game = {
-    players: bots.map((bot) => bot.player),
+    players: bots.map((bot) => bot.shape),
     foodCoordinates: [] as FoodPlacement[],
     aliveCount: 0,
     mode,
@@ -143,9 +144,9 @@ export function playMatch(options: MatchOptions): MatchResult {
   for (let ticks = 1; ; ticks++) {
     bots.forEach((bot) => bot.snapshots.record(game));
     bots.forEach((bot) => {
-      if (bot.player.snake.isDead) return;
+      if (bot.shape.snake.isDead) return;
       try {
-        steer(bot.player.snake, bot.decider(viewFor(game, bot.player, bot.snapshots)));
+        steer(bot.shape.snake, bot.decider(viewFor(game, bot.shape, bot.snapshots)));
       } catch {
         bot.decisionErrors++;
       }
@@ -159,7 +160,7 @@ export function playMatch(options: MatchOptions): MatchResult {
       return {
         result: { reason: reason!, ...(winnerId !== undefined && { winnerId }) },
         ticks,
-        players: bots.map(({ player: { id, snake }, name, decisionErrors }) =>
+        players: bots.map(({ shape: { id, snake }, name, decisionErrors }) =>
           ({ id, name, score: snake.score, length: snake.size, decisionErrors })),
         ...(keepEvents && { events })
       };

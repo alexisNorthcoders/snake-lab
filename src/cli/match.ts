@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { DiedEvent } from "snake-colyseus/engine";
 import { MatchEvent, MatchPlayer, playMatch } from "../match.ts";
-import { exit, matchArgs, matchArgsHelp, mode, number, orExit, seats } from "./args.ts";
+import { exit, matchArgs, matchArgsHelp, matchOptions, orExit } from "./args.ts";
 
 const usage = `Plays one match and prints the result.
 
@@ -17,12 +17,7 @@ const args = orExit(usage, () => parseArgs({
 }).values);
 if (args.help) exit(usage, 0);
 
-const options = orExit(usage, () => ({
-  seed: number("seed", args.seed),
-  seats: seats(args.players, args.delays),
-  mode: mode(args.mode),
-  fps: number("fps", args.fps)
-}));
+const options = orExit(usage, () => matchOptions(args));
 const result = orExit(usage, () => playMatch(options));
 
 if (args.json) {
