@@ -12,6 +12,7 @@ import {
 } from "snake-colyseus/bots";
 import { MatchOptions, MatchResult, playMatch } from "./match.ts";
 import { DELAYS, MODES } from "./gauntlet.ts";
+import { Pool } from "./pool.ts";
 
 /** The personalities the trainer has a fitness for. */
 export const TRAINABLE: readonly Personality[] = ["glutton"];
@@ -236,6 +237,23 @@ export function evaluate(brain: Brain, fixtures: Fixture[], stage: Stage, settin
   }), settings);
 }
 
+/** Where a run carries on from: the generation to play next, and its snakes. */
+export interface Checkpoint {
+  generation: number;
+  population: Brain[];
+}
+
+export interface TrainOptions {
+  /** Worker threads to play the matches on; 1 plays them on this thread. Never changes the result. */
+  workers?: number;
+  /** Carry on from here rather than from generation 0's random brains. */
+  from?: Checkpoint;
+  /** Called after each generation with its log line, its fittest, and the checkpoint to carry on from. */
+  onGeneration?: (line: GenerationLog, best: Brain, next: Checkpoint) => void;
+  /** Asked after each generation: true ends the run there, with the checkpoint saved. */
+  stop?: () => boolean;
+}
+
 /**
  * Neuroevolution: trains a population of encoder-v1 brains for a personality.
  *
@@ -249,30 +267,57 @@ export function evaluate(brain: Brain, fixtures: Fixture[], stage: Stage, settin
  * deviation `mutationSize`. The first `aloneGenerations` play alone on the
  * board; the rest play 1v1 against the rookie at the same delay.
  *
+ * The next generation is bred after the last one too, so a finished run's
+ * checkpoint can carry on to more generations.
+ *
  * Defaults (`DEFAULT_SETTINGS`): 50 generations, 10 of them alone; 50 snakes,
  * 2 elites, tournaments of 3, mutation rate 0.1 and size 0.2, initial size 0.5;
  * one hidden layer of 16, tanh; 10 matches a generation at 8 fps; fitness
  * weights 1 for food and 0.1 a tick survived.
  *
- * Nothing reads the clock or `Math.random`: the same settings give the same log and brains.
+ * Nothing reads the clock or `Math.random`: the same settings give the same log
+ * and brains, however many workers play them and wherever the run was stopped
+ * and carried on from.
  */
-export function train(settings: TrainSettings, onGeneration?: (line: GenerationLog) => void): TrainResult {
+export async function train(settings: TrainSettings, options: TrainOptions = {}): Promise<TrainResult> {
   checkSettings(settings);
-  const log: GenerationLog[] = [];
-  let population: Brain[] = [];
-  for (let g = 0; ; g++) {
-    const rng = generationRng(settings.seed, g);
-    if (g === 0) {
-      population = Array.from({ length: settings.population }, () =>
-        randomBrain(rng, settings.hidden, settings.activation, settings.initialSize));
-    }
-    const stage = stageOf(g, settings);
-    const matches = fixtures(rng, stage, settings.matches);
-    const fitness = population.map((brain) => evaluate(brain, matches, stage, settings));
-    const line = { generation: g, stage, best: Math.max(...fitness), mean: fitness.reduce((a, b) => a + b, 0) / fitness.length };
-    log.push(line);
-    onGeneration?.(line);
-    if (g === settings.generations - 1) return { log, best: population[ranked(fitness)[0]], population };
-    population = breed(population, fitness, rng, settings);
+  const { workers = 1, from, onGeneration, stop } = options;
+  if (from && !(Number.isInteger(from.generation) && from.generation >= 0 && from.generation < settings.generations)) {
+    throw new Error(`can't carry on from generation ${from.generation} of ${settings.generations}`);
   }
+  const pool = workers > 1 ? new Pool(workers) : undefined;
+  try {
+    const log: GenerationLog[] = [];
+    let population = from?.population ?? [];
+    let played: { best: Brain; population: Brain[] } | undefined;
+    for (let g = from?.generation ?? 0; g < settings.generations; g++) {
+      const rng = generationRng(settings.seed, g);
+      if (g === 0) {
+        population = Array.from({ length: settings.population }, () =>
+          randomBrain(rng, settings.hidden, settings.activation, settings.initialSize));
+      }
+      const stage = stageOf(g, settings);
+      const matches = fixtures(rng, stage, settings.matches);
+      const fitness = pool ? await pool.fitness(population, matches, stage, settings) : await fitnessHere(population, matches, stage, settings);
+      const line = { generation: g, stage, best: Math.max(...fitness), mean: fitness.reduce((a, b) => a + b, 0) / fitness.length };
+      played = { best: population[ranked(fitness)[0]], population };
+      population = breed(population, fitness, rng, settings);
+      log.push(line);
+      onGeneration?.(line, played.best, { generation: g + 1, population });
+      if (stop?.()) break;
+    }
+    return { log, best: played!.best, population: played!.population };
+  } finally {
+    await pool?.close();
+  }
+}
+
+/** Every snake's fitness, played on this thread, letting signals in between snakes. */
+async function fitnessHere(population: Brain[], matches: Fixture[], stage: Stage, settings: TrainSettings) {
+  const fitness: number[] = [];
+  for (const brain of population) {
+    fitness.push(evaluate(brain, matches, stage, settings));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return fitness;
 }

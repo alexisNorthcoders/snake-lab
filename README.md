@@ -47,11 +47,22 @@ seeded matches (both modes, reaction delays 0 to 4) and is scored by its fitness
 food score plus a small bonus for every tick it survives, averaged over its matches. The fittest are
 kept as they are, and the rest of the next generation is bred from the fittest by crossover and
 mutation. The first generations play alone on the board, the rest against the rookie. It prints the
-best and mean fitness each generation, and writes them, the settings and the final best brain
-(`best.json`) into the run folder. The same seed and settings always give the same run. The final
-brain can be tried with `npm run match -- --players runs/glutton-1/best.json,rookie` and put
-through the gauntlet. `--help` lists the settings (population, mutation, stages and so on); only
-the Glutton can be trained for now.
+best and mean fitness each generation, and at the end how many matches a second and generations an
+hour it played. The same seed and settings always give the same run.
+
+The run folder keeps every generation's best brain (`generations/gen-0010.json` and so on), so any
+generation can be tried or promoted later, the latest again as `best.json`, and a checkpoint of the
+latest population. Ctrl-C stops the run after the current generation, and
+
+```sh
+npm run train -- --resume runs/glutton-1 [--generations 500]
+```
+
+carries on from the checkpoint, with exactly the result of a run that never stopped. Matches are
+played on every core (`--workers` to choose), which never changes the result. A brain can be tried
+with `npm run match -- --players runs/glutton-1/best.json,rookie` and put through the gauntlet.
+`--help` lists the settings (population, mutation, stages and so on); only the Glutton can be
+trained for now. `AGENTS.md` describes running a long job in the background.
 
 ## Other commands
 

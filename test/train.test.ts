@@ -5,10 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { mulberry32 } from "snake-colyseus/engine";
-import { brainProblems } from "snake-colyseus/bots";
+import { Brain, brainProblems } from "snake-colyseus/bots";
 import { loadCandidate } from "../src/gauntlet.ts";
 import { MatchResult } from "../src/match.ts";
 import {
+  Checkpoint,
   DEFAULT_SETTINGS,
   TrainSettings,
   breed,
@@ -118,18 +119,18 @@ describe("checkSettings", () => {
 });
 
 describe("train", () => {
-  it("gives identical logs and brains from the same seed, and different ones from another", () => {
-    const first = train(short);
-    const again = train(short);
-    const other = train({ ...short, seed: 2 });
+  it("gives identical logs and brains from the same seed, and different ones from another", async () => {
+    const first = await train(short);
+    const again = await train(short);
+    const other = await train({ ...short, seed: 2 });
     assert.deepEqual(again, first);
     assert.notDeepEqual(other.log, first.log);
     assert.notDeepEqual(other.best, first.best);
   });
 
-  it("logs each generation's best and mean fitness and stage, and ends with a valid brain", () => {
+  it("logs each generation's best and mean fitness and stage, and ends with a valid brain", async () => {
     const lines: unknown[] = [];
-    const { log, best, population } = train(short, (line) => lines.push(line));
+    const { log, best, population } = await train(short, { onGeneration: (line) => lines.push(line) });
     assert.deepEqual(lines, log);
     assert.deepEqual(log.map((l) => [l.generation, l.stage]), [[0, "alone"], [1, "rookie"], [2, "rookie"]]);
     log.forEach((l) => assert.ok(l.best >= l.mean));
@@ -137,9 +138,34 @@ describe("train", () => {
     assert.deepEqual(brainProblems(best), []);
   });
 
-  it("learns against the rookie: the best fitness goes up from the first generation to the last", () => {
-    const { log } = train(settings({ seed: 5, generations: 5, aloneGenerations: 0, population: 10, matches: 3 }));
+  it("learns against the rookie: the best fitness goes up from the first generation to the last", async () => {
+    const { log } = await train(settings({ seed: 5, generations: 5, aloneGenerations: 0, population: 10, matches: 3 }));
     assert.ok(log.at(-1)!.best > log[0].best, JSON.stringify(log));
+  });
+
+  it("gives the same result on 1 worker and on several", async () => {
+    const one = await train(short, { workers: 1 });
+    assert.deepEqual(await train(short, { workers: 3 }), one);
+    assert.deepEqual(await train(short, { workers: 8 }), one);
+  });
+
+  it("carries on from a checkpoint exactly as if it had never stopped", async () => {
+    const straight = await train(short);
+    let next: Checkpoint | undefined;
+    const first = await train(short, { onGeneration: (_, __, checkpoint) => (next = checkpoint), stop: () => true });
+    assert.deepEqual(first.log, straight.log.slice(0, 1));
+    assert.equal(next!.generation, 1);
+    const rest = await train(short, { from: next });
+    assert.deepEqual([...first.log, ...rest.log], straight.log);
+    assert.deepEqual(rest.best, straight.best);
+    assert.deepEqual(rest.population, straight.population);
+  });
+
+  it("fails the generation loudly when a worker throws, rather than scoring it zero", async () => {
+    const broken = { ...randomBrain(mulberry32(1), [4], "tanh", 0.5), encoderVersion: 99 } as unknown as Brain;
+    await assert.rejects(train({ ...short, population: 4 }, { workers: 2, from: { generation: 1, population: [...brains(3), broken] } }),
+      /snake 3 couldn't be played/);
+    await assert.rejects(train({ ...short, population: 4 }, { workers: 1, from: { generation: 1, population: [...brains(3), broken] } }));
   });
 });
 
