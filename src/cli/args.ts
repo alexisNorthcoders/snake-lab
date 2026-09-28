@@ -1,5 +1,6 @@
 import { GameMode } from "snake-colyseus/engine";
 import { roster } from "snake-colyseus/bots";
+import { loadCandidate } from "../gauntlet.ts";
 import { MatchOptions, Seat } from "../match.ts";
 
 const rosterIds = roster.map((entry) => entry.id).join(", ");
@@ -15,7 +16,7 @@ export const matchArgs = {
 } as const;
 
 export const matchArgsHelp = `  --seed <n>        the seed (bench: the first), a whole number in [0, 2^32) (default 1)
-  --players <ids>   roster ids in seat order, comma-separated (default rookie,rookie)
+  --players <ids>   roster ids or brain files in seat order, comma-separated (default rookie,rookie)
                     roster: ${rosterIds}
   --mode <mode>     timed or endless (default timed)
   --fps <n>         ticks per second, which sets a timed round's length (default 8)
@@ -46,18 +47,14 @@ const parseMode = (value: string): GameMode => {
   return value;
 };
 
-/** The seats named by `--players` and `--delays`. The match itself checks how many there are. */
+/** The seats named by `--players` (roster ids or brain files) and `--delays`. The match itself checks how many there are. */
 const parseSeats = (players: string, delays: string): Seat[] => {
   const ids = players.split(",").map((id) => id.trim());
   const perSeat = delays.split(",").map((d) => parseNumber("delays", d));
   if (perSeat.length !== 1 && perSeat.length !== ids.length) {
     throw new Error(`--delays gives ${perSeat.length} delays for ${ids.length} players: give one, or one each`);
   }
-  return ids.map((id, i) => {
-    const player = roster.find((entry) => entry.id === id);
-    if (!player) throw new Error(`no roster snake "${id}": the roster has ${rosterIds}`);
-    return { player, delay: perSeat.length === 1 ? perSeat[0] : perSeat[i] };
-  });
+  return ids.map((id, i) => ({ player: loadCandidate(id).player, delay: perSeat.length === 1 ? perSeat[0] : perSeat[i] }));
 };
 
 /** The match the shared options describe. Throws, saying why, on one that can't be read. */

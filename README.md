@@ -16,7 +16,7 @@ npm run match -- --seed 7 --players rookie,dummy --mode timed --fps 8 --delays 2
 This plays one round, headless and as fast as it can, and prints why it ended, who won, and each
 snake's score, length and death. The same options always play the same match, so any match can be
 replayed from its seed. `--events` also lists every pellet eaten and every death, tick by tick,
-and `--json` prints the whole result. Players are roster ids (`rookie`, `dummy`), seated in the order
+and `--json` prints the whole result. Players are roster ids (`rookie`, `dummy`) or brain files, seated in the order
 given (1 to 4), and `--delays` takes one reaction delay for everyone or one per player.
 
 ## Running the gauntlet
@@ -35,6 +35,23 @@ the rookie at delay 2, over both modes, and exits 0 on a pass and 1 on a fail. `
 100 per cell), `--base-seed` (default 1) and `--fps` (default 8) change the run, and the same
 options always give the same report. The first numbers are in
 [`docs/benchmarks/`](docs/benchmarks/2026-09-28-first-gauntlet.md).
+
+## Training a snake
+
+```sh
+npm run train -- --personality glutton --run runs/glutton-1 --seed 1
+```
+
+This trains a population of brains by neuroevolution. Each generation, every snake plays the same
+seeded matches (both modes, reaction delays 0 to 4) and is scored by its fitness: for a Glutton, its
+food score plus a small bonus for every tick it survives, averaged over its matches. The fittest are
+kept as they are, and the rest of the next generation is bred from the fittest by crossover and
+mutation. The first generations play alone on the board, the rest against the rookie. It prints the
+best and mean fitness each generation, and writes them, the settings and the final best brain
+(`best.json`) into the run folder. The same seed and settings always give the same run. The final
+brain can be tried with `npm run match -- --players runs/glutton-1/best.json,rookie` and put
+through the gauntlet. `--help` lists the settings (population, mutation, stages and so on); only
+the Glutton can be trained for now.
 
 ## Other commands
 
