@@ -27,8 +27,13 @@ process.stdin.on("data", (chunk: Buffer) => {
     process.exit(1);
   }
   for (const frame of frames) {
-    process.stdout.write(encodeFrame(session.handle(frame)));
-    if (session.closed) process.exit(0);
+    const written = encodeFrame(session.handle(frame));
+    if (session.closed) {
+      // exit only once the closing frame has been flushed
+      process.stdout.write(written, () => process.exit(0));
+      return;
+    }
+    process.stdout.write(written);
   }
 });
 process.stdin.on("end", () => process.exit(0));

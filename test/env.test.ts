@@ -4,6 +4,7 @@ import { after, describe, it } from "node:test";
 import { Readable, Writable } from "node:stream";
 import { pickBot } from "snake-colyseus/bots";
 import { FACT_COUNT, FACT_FIELDS, Frame, FrameReader, encodeFrame } from "../src/env.ts";
+import { mulberry32 } from "snake-colyseus/engine";
 import { STRAIGHT, SteppedMatch } from "../src/match.ts";
 
 /** An `env` subprocess, spoken to through its protocol. */
@@ -113,6 +114,37 @@ describe("the env subprocess", () => {
     }
     assert.ok(ended >= 2, `matches should have ended and restarted, ${ended} did`);
     assert.ok(previous!.every((v) => Number.isFinite(v)));
+  });
+
+  it("pairs an ended match's last facts with the next match's first observation, as a stepped match does", async () => {
+    const c = client();
+    const rng = mulberry32(9);
+    const make = () => new SteppedMatch({
+      seed: Math.floor(rng() * 2 ** 32),
+      seats: [{ player: { name: "learner", decider: () => "r" }, delay: 2 }],
+      mode: "endless", fps: 8, learner: 0, encoder: 2, keepEvents: false
+    });
+    let ref = make();
+    const first = split(await c.request(config({ seed: 9, matches: [{ opponents: [], mode: "endless" }] })));
+    assert.deepEqual([...first.observations], ref.observe().map(Math.fround));
+    let ended = 0;
+    for (let step = 0; step < 300 && ended < 2; step++) {
+      const action = (step % 5 === 4 ? 0 : STRAIGHT) as 0 | 1;
+      const batch = split(await c.request({ type: "step" }, Buffer.from([action])));
+      const f = ref.step(action);
+      assert.equal(batch.field(0, "ticks"), f.tick);
+      assert.equal(batch.field(0, "ate"), f.ate);
+      assert.equal(batch.field(0, "scoreGained"), f.scoreGained);
+      assert.equal(batch.field(0, "alive"), f.alive ? 1 : 0);
+      const isEnd = !f.alive || f.over;
+      assert.equal(batch.field(0, "ended"), isEnd ? 1 : 0);
+      if (isEnd) {
+        ended++;
+        ref = make();
+      }
+      assert.deepEqual([...batch.observations], ref.observe().map(Math.fround));
+    }
+    assert.ok(ended >= 1, "the reference match should have ended");
   });
 
   it("ends a match when the learner dies, unless told not to", async () => {
