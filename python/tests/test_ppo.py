@@ -9,7 +9,8 @@ import torch
 from snake_lab.brain import export_brain
 from snake_lab.env import REPO_ROOT
 from snake_lab.ppo import Agent, compute_gae, ppo_loss
-from snake_lab.rewards import REWARDS, glutton_reward
+from snake_lab.league import league_opponents, snapshot_paths
+from snake_lab.rewards import REWARDS, glutton_reward, hunter_reward, survivor_reward
 from snake_lab.run import Settings, create_run, open_run, read_log, run_files, train
 
 
@@ -93,6 +94,71 @@ def test_glutton_reward_from_facts():
 def test_rewards_are_chosen_by_personality_with_the_settings_weights():
     settings = {"food_weight": 3.0, "tick_bonus": 0.5}
     assert REWARDS["glutton"](facts(scoreGained=[1], alive=[1]), settings).tolist() == [3.5]
+
+
+def test_survivor_reward_from_facts():
+    # a tick alive is 0.1; winning adds 10 on the round's last tick only (not for a loss, a draw or a round still going)
+    f = facts(alive=[1, 1, 0, 1, 1], ended=[0, 1, 1, 1, 1], outcome=[0, 1, 2, 3, 1])
+    assert survivor_reward(f).tolist() == pytest.approx([0.1, 10.1, 0.0, 0.1, 10.1])
+    assert survivor_reward(f, alive_weight=0, win_bonus=2).tolist() == pytest.approx([0, 2, 0, 0, 2])
+    assert survivor_reward(f).dtype == np.float32
+
+
+def test_hunter_reward_from_facts():
+    # kills 10 each, a win 5, food score 0.01 a point
+    f = facts(kills=[0, 1, 2, 0, 0], scoreGained=[0, 10, 0, 20, 0], ended=[0, 0, 1, 1, 1], outcome=[0, 0, 1, 2, 3])
+    assert hunter_reward(f).tolist() == pytest.approx([0.0, 10.1, 25.0, 0.2, 0.0])
+    assert hunter_reward(f, kill_bonus=1, win_bonus=0, food_bonus=0).tolist() == pytest.approx([0, 1, 2, 0, 0])
+    assert hunter_reward(f).dtype == np.float32
+
+
+def test_a_mutual_head_on_is_no_kill_for_the_hunter():
+    # the engine's facts for a head-on: the learner died (deathCause 3, deathBy names the other) and `kills` is 0
+    f = facts(kills=[0], alive=[0], deathCause=[3], deathBy=[1], ended=[1], outcome=[2])
+    assert hunter_reward(f).tolist() == [0.0]
+
+
+def test_rewards_pick_their_weights_from_the_settings():
+    s = {"alive_weight": 0.5, "survivor_win_bonus": 7.0, "kill_bonus": 4.0, "hunter_win_bonus": 3.0, "food_bonus": 0.5}
+    f = facts(kills=[1], scoreGained=[2], alive=[1], ended=[1], outcome=[1])
+    assert REWARDS["survivor"](f, s).tolist() == [7.5]
+    assert REWARDS["hunter"](f, s).tolist() == [8.0]
+
+
+# The league ---------------------------------------------------------------------------------
+
+SNAPSHOTS = ["/runs/x/generations/gen-0000.json", "/runs/x/generations/gen-0001.json"]
+ROSTER = ["rookie", "dummy", "bruiser"]
+
+
+def test_league_opponents_are_only_snapshots_and_the_roster():
+    drawn = league_opponents(np.random.default_rng(1), 200, 0.2, SNAPSHOTS, ROSTER)
+    seen = {o for each in drawn for o in each}
+    assert seen <= set(SNAPSHOTS) | set(ROSTER)
+    assert seen & set(SNAPSHOTS) and seen & set(ROSTER)  # a mix of both
+    assert "rookie" in seen
+    only_roster = league_opponents(np.random.default_rng(1), 50, 0.2, [], ROSTER)
+    assert {o for each in only_roster for o in each} <= set(ROSTER)
+
+
+def test_league_share_of_four_player_matches():
+    for matches, share, four in [(10, 0.2, 2), (16, 0.2, 3), (16, 0.0, 0), (16, 1.0, 16)]:
+        drawn = league_opponents(np.random.default_rng(3), matches, share, SNAPSHOTS, ROSTER)
+        assert {len(each) for each in drawn} <= {1, 3}
+        assert sum(len(each) == 3 for each in drawn) == four
+
+
+def test_league_draws_come_from_the_seed():
+    draw = lambda seed: league_opponents(np.random.default_rng(seed), 16, 0.2, SNAPSHOTS, ROSTER)  # noqa: E731
+    assert draw(4) == draw(4)
+    assert draw(4) != draw(5)
+
+
+def test_snapshot_paths_are_the_earlier_checkpoints(tmp_path):
+    paths = snapshot_paths(tmp_path / "generations", 3)
+    assert [Path(p).name for p in paths] == ["gen-0000.json", "gen-0001.json", "gen-0002.json"]
+    assert all(Path(p).is_absolute() for p in paths)
+    assert snapshot_paths(tmp_path, 0) == []
 
 
 # The export ---------------------------------------------------------------------------------
@@ -196,3 +262,49 @@ def test_settings_are_checked():
         tiny(checkpoint_every=3).check()
     with pytest.raises(ValueError, match="personality"):
         tiny(personality="nope").check()
+
+
+@pytest.mark.parametrize("personality", ["glutton", "survivor", "hunter"])
+def test_every_personality_trains_a_run(tmp_path, personality):
+    run = tmp_path / "run"
+    settings = tiny(personality=personality, alone_updates=1, rookie_updates=1)
+    create_run(run, settings)
+    assert train(run, settings, echo=lambda _: None) == 2
+    log = read_log(run_files(run)["log"])
+    assert [line["stage"] for line in log] == ["alone", "rookie"]
+    assert json.loads(run_files(run)["settings"].read_text())["personality"] == personality
+
+
+def test_a_run_crosses_into_the_league_and_resumes_as_if_it_never_stopped(tmp_path):
+    settings = tiny(alone_updates=1, rookie_updates=1, league_updates=3, four_player_share=0.5)
+    whole, split = tmp_path / "whole", tmp_path / "split"
+    create_run(whole, settings)
+    assert train(whole, settings, echo=lambda _: None) == 5
+    log = read_log(run_files(whole)["log"])
+    assert [line["stage"] for line in log] == ["alone", "rookie", "league", "league", "league"]
+    saved = json.loads(run_files(whole)["settings"].read_text())
+    assert saved["leagueGenerations"] == 3 and saved["generations"] == 5 and saved["fourPlayerShare"] == 0.5
+    assert torch.load(run_files(whole)["checkpoint"], weights_only=True)["stage"] == "league"
+
+    create_run(split, settings)
+    calls = []
+
+    def stop_after_three():  # stops inside the league, so the resume lands in it
+        calls.append(1)
+        return len(calls) > 3
+
+    assert train(split, settings, stop=stop_after_three, echo=lambda _: None) == 3
+    assert torch.load(run_files(split)["checkpoint"], weights_only=True)["stage"] == "league"
+    assert train(split, open_run(split), echo=lambda _: None) == 5
+    assert read_log(run_files(split)["log"]) == log
+    for g in range(5):
+        name = f"gen-{g:04d}.json"
+        assert (run_files(split)["generations"] / name).read_text() == (run_files(whole)["generations"] / name).read_text()
+
+
+def test_resume_can_add_a_league(tmp_path):
+    run = tmp_path / "run"
+    create_run(run, tiny(alone_updates=1, rookie_updates=1))
+    settings = open_run(run, league_updates=2)
+    assert settings.checkpoints == 4 and settings.stage(3) == "league"
+    assert json.loads(run_files(run)["settings"].read_text())["leagueGenerations"] == 2

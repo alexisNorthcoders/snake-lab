@@ -148,6 +148,12 @@ class SnakeVectorEnv(VectorEnv):
             raise EnvProcessError(f"observations are {obs.shape}, expected {self.observation_space.shape}")
         return obs, {name: facts[:, k].copy() for k, name in enumerate(fields)}
 
+    def set_opponents(self, opponents: Sequence[Sequence[str]]) -> None:
+        """Each match's own opponents (roster ids or brain files), used from the next `reset`."""
+        if len(opponents) != self.num_envs:
+            raise ValueError(f"expected opponents for {self.num_envs} matches, got {len(opponents)}")
+        self._config["matches"] = [{**spec, "opponents": list(each)} for spec, each in zip(self._config["matches"], opponents)]
+
     # Gymnasium ----------------------------------------------------------------------------
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):

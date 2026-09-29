@@ -87,6 +87,24 @@ describe("promote", () => {
     assert.ok(existsSync(join(run, "promote-nimble-pete.md")));
   });
 
+  it("reads the method from a PPO run: the entry says ppo, with the checkpoint as its generation and the run's personality", () => {
+    const run = newRun();
+    const ppoSettings = { method: "ppo", personality: "hunter", seed: 3, generations: 4, aloneGenerations: 1, rookieGenerations: 2, leagueGenerations: 1, fps: 8 };
+    writeFileSync(runFiles(run).settings, json(ppoSettings));
+    const target = newCheckout();
+    const { promotion } = promote({ ...base(run, target), gauntlet: standIn(8) });
+    assert.ok(promotion);
+
+    const errors: string[] = [];
+    const loaded = loadRoster(join(target, "src/bots"), { error: (m: string) => errors.push(m), warn: (m: string) => errors.push(m) } as never);
+    assert.deepEqual(errors, []);
+    const entry = loaded.find((e) => e.id === "nimble-pete");
+    assert.ok(entry && entry.kind === "brain");
+    assert.deepEqual({ personality: entry.personality, generation: entry.generation, method: entry.method }, { personality: "hunter", generation: 3, method: "ppo" });
+    assert.equal(JSON.parse(readFileSync(join(target, "package.json"), "utf8")).engineVersion, "4.1.0");
+    assert.match(promotion.description, /\(ppo, seed 3\)/);
+  });
+
   it("holds the gauntlet's table and verdict in the PR description", () => {
     const run = newRun();
     const { promotion, table } = promote({ ...base(run, newCheckout()), gauntlet: standIn(8) });

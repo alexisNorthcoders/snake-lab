@@ -5,7 +5,7 @@
 
 Training is a row of **checkpoints** (`checkpoint_every` PPO updates each), which the dashboard and `promote` see as
 generations. Each is one stage: `alone` for the first `alone_updates`, then `rookie` (1v1 against the rookie) for
-`rookie_updates`. At the start of each the env is reset from a seed drawn from (seed, checkpoint number) and so is the
+`rookie_updates`, then the `league` for `league_updates` (see `league.py`). At the start of each the env is reset from a seed drawn from (seed, checkpoint number) and so is the
 sampling generator, so a run resumed from a checkpoint replays exactly the run that never stopped (on the same machine).
 """
 
@@ -22,8 +22,12 @@ import torch
 
 from .brain import export_brain
 from .env import ENCODER_SIZES, SnakeVectorEnv
+from .league import league_opponents, roster_ids, snapshot_paths
 from .ppo import Agent, collect, update
 from .rewards import REWARDS
+
+
+RESUMABLE = ("rookie_updates", "league_updates")  # what `--resume` may change
 
 
 @dataclass
@@ -33,6 +37,8 @@ class Settings:
     # stages, in PPO updates; each is a whole number of checkpoints
     alone_updates: int = 40
     rookie_updates: int = 160
+    league_updates: int = 0
+    four_player_share: float = 0.2  # the league's share of four-player matches; the rest are 1v1
     checkpoint_every: int = 5
     # the game
     encoder: int = 2
@@ -50,9 +56,16 @@ class Settings:
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
-    # Glutton reward
+    # Glutton reward: food score gained, and a bonus a tick alive
     food_weight: float = 1.0
     tick_bonus: float = 0.1
+    # Survivor reward: a bonus a tick alive, and a bonus for winning
+    alive_weight: float = 0.1
+    survivor_win_bonus: float = 10.0
+    # Hunter reward: a bonus a kill (a head-on is none), a bonus for winning, and one for food score gained
+    kill_bonus: float = 10.0
+    hunter_win_bonus: float = 5.0
+    food_bonus: float = 0.01
     threads: int = 1  # torch's threads; one keeps a run exactly repeatable and leaves cores to the engine
 
     def check(self) -> None:
@@ -62,21 +75,27 @@ class Settings:
             raise ValueError("encoder must be 1 or 2")
         if not 0 <= self.seed < 2**32:
             raise ValueError("seed must be in [0, 2**32)")
-        if self.checkpoint_every < 1 or self.alone_updates < 0 or self.rookie_updates < 0:
+        stages = (self.alone_updates, self.rookie_updates, self.league_updates)
+        if self.checkpoint_every < 1 or min(stages) < 0:
             raise ValueError("checkpoint_every must be at least 1 and the stages' updates 0 or more")
-        if self.alone_updates % self.checkpoint_every or self.rookie_updates % self.checkpoint_every:
+        if any(updates % self.checkpoint_every for updates in stages):
             raise ValueError("each stage must be a whole number of checkpoints (multiples of checkpoint_every)")
-        if self.alone_updates + self.rookie_updates == 0:
-            raise ValueError("nothing to train: both stages are 0 updates")
+        if sum(stages) == 0:
+            raise ValueError("nothing to train: every stage is 0 updates")
+        if not 0 <= self.four_player_share <= 1:
+            raise ValueError("four_player_share must be in [0, 1]")
         if self.num_envs * self.num_steps < self.minibatches or self.minibatches < 1:
             raise ValueError("a rollout needs at least one tick a minibatch")
 
     @property
     def checkpoints(self) -> int:
-        return (self.alone_updates + self.rookie_updates) // self.checkpoint_every
+        return (self.alone_updates + self.rookie_updates + self.league_updates) // self.checkpoint_every
 
     def stage(self, checkpoint: int) -> str:
-        return "alone" if checkpoint * self.checkpoint_every < self.alone_updates else "rookie"
+        updates = checkpoint * self.checkpoint_every
+        if updates < self.alone_updates:
+            return "alone"
+        return "rookie" if updates < self.alone_updates + self.rookie_updates else "league"
 
     def to_json(self) -> dict:
         """The file's fields: the shared ones the dashboard and `promote` read, then the PPO ones as they are."""
@@ -87,6 +106,8 @@ class Settings:
             "generations": self.checkpoints,
             "aloneGenerations": self.alone_updates // self.checkpoint_every,
             "rookieGenerations": self.rookie_updates // self.checkpoint_every,
+            "leagueGenerations": self.league_updates // self.checkpoint_every,
+            "fourPlayerShare": self.four_player_share,
             "fps": self.fps,
         }
         return {**shared, **{k: v for k, v in asdict(self).items() if k not in shared}}
@@ -128,7 +149,7 @@ def run_files(run: Path) -> dict[str, Path]:
 
 
 def save_checkpoint(run: Path, settings: Settings, agent: Agent, optimizer, line: dict, brain: dict) -> None:
-    """A checkpoint's files: its brain, the log line, then the state to resume from, last."""
+    """A checkpoint's files: its brain, the log line, then the state to resume from (and the stage it lands in), last."""
     files = run_files(run)
     _write_whole(files["generations"] / f"gen-{line['generation']:04d}.json", _json(brain))
     _write_whole(files["best"], _json(brain))
@@ -137,7 +158,8 @@ def save_checkpoint(run: Path, settings: Settings, agent: Agent, optimizer, line
         log.flush()
         os.fsync(log.fileno())
     tmp = files["checkpoint"].with_name("checkpoint.pt.tmp")
-    torch.save({"generation": line["generation"] + 1, "agent": agent.state_dict(), "optimizer": optimizer.state_dict()}, tmp)
+    upcoming = min(line["generation"] + 1, settings.checkpoints - 1)
+    torch.save({"generation": line["generation"] + 1, "stage": settings.stage(upcoming), "agent": agent.state_dict(), "optimizer": optimizer.state_dict()}, tmp)
     os.replace(tmp, files["checkpoint"])
 
 
@@ -153,16 +175,16 @@ def _seed_for(settings: Settings, checkpoint: int) -> int:
 
 
 def make_env(settings: Settings, stage: str) -> SnakeVectorEnv:
-    """Matches mixing both modes and delays 0 to 4 (the learner's and the rookie's separately); alone on the board, or 1v1."""
-    rookie = stage == "rookie"
+    """Matches mixing both modes and delays 0 to 4 (the learner's and the opponents' separately); alone on the board,
+    1v1 against the rookie, or the league (whose opponents each checkpoint sets with `set_opponents`)."""
     return SnakeVectorEnv(
         settings.num_envs,
         encoder=settings.encoder,
-        opponents=["rookie"] if rookie else [],
+        opponents=["rookie"] if stage == "rookie" else [],
         modes=("timed", "endless"),
         learner_delay=(0, 4),
         opponent_delay=(0, 4),
-        seat="random" if rookie else 0,
+        seat=0 if stage == "alone" else "random",
         fps=settings.fps,
     )
 
@@ -187,6 +209,7 @@ def train(run: Path, settings: Settings, *, stop=lambda: False, echo=lambda text
     reward_fn = lambda facts: REWARDS[settings.personality](facts, asdict(settings))  # noqa: E731
     generator = torch.Generator()
     env, env_stage = None, None
+    roster: list[str] = []
     try:
         for checkpoint in range(start, settings.checkpoints):
             if stop():
@@ -196,6 +219,11 @@ def train(run: Path, settings: Settings, *, stop=lambda: False, echo=lambda text
                 if env is not None:
                     env.close()
                 env, env_stage = make_env(settings, stage), stage
+            if stage == "league":
+                roster = roster or roster_ids()
+                league_rng = np.random.default_rng([settings.seed, checkpoint])
+                snapshots = snapshot_paths(files["generations"], checkpoint)
+                env.set_opponents(league_opponents(league_rng, settings.num_envs, settings.four_player_share, snapshots, roster))
             obs, _ = env.reset(seed=_seed_for(settings, checkpoint))
             generator.manual_seed(_seed_for(settings, checkpoint))
             episode_return = np.zeros(settings.num_envs, dtype=np.float32)
@@ -238,8 +266,8 @@ def create_run(run: Path, settings: Settings) -> None:
     _write_whole(run_files(run)["settings"], _json(settings.to_json()))
 
 
-def open_run(run: Path, rookie_updates: int | None = None) -> Settings:
-    """A run folder's settings. `rookie_updates` may be raised (or lowered) to carry on further, and is saved."""
+def open_run(run: Path, rookie_updates: int | None = None, league_updates: int | None = None) -> Settings:
+    """A run folder's settings. `rookie_updates` and `league_updates` may be changed to carry on further, and are saved."""
     path = run_files(run)["settings"]
     if not path.exists():
         raise FileNotFoundError(f"{run} isn't a run folder: it has no settings.json")
@@ -249,8 +277,10 @@ def open_run(run: Path, rookie_updates: int | None = None) -> Settings:
     settings = Settings.from_json(data)
     if rookie_updates is not None:
         settings.rookie_updates = rookie_updates
+    if league_updates is not None:
+        settings.league_updates = league_updates
     settings.check()
-    if rookie_updates is not None:
+    if rookie_updates is not None or league_updates is not None:
         _write_whole(path, _json(settings.to_json()))
     return settings
 
@@ -264,20 +294,18 @@ def main(argv: list[str] | None = None) -> int:
         if f.name == "hidden":
             p.add_argument("--hidden", type=int, nargs="+", help=f"hidden layer sizes (default {list(defaults.hidden)})")
         else:
-            p.add_argument(f"--{f.name.replace('_', '-')}", type=type(getattr(defaults, f.name)), help=f"default {getattr(defaults, f.name)}" + (" (on --resume: a new length, to train further)" if f.name == "rookie_updates" else ""))
+            p.add_argument(f"--{f.name.replace('_', '-')}", type=type(getattr(defaults, f.name)), help=f"default {getattr(defaults, f.name)}" + (" (on --resume: a new length, to train further)" if f.name in RESUMABLE else ""))
     args = p.parse_args(argv)
 
     if args.resume:
-        given = [f.name for f in fields(Settings) if getattr(args, f.name, None) is not None and f.name != "rookie_updates"]
+        given = [f.name for f in fields(Settings) if getattr(args, f.name, None) is not None and f.name not in RESUMABLE]
         if args.run or given:
-            p.error("--resume takes only --rookie-updates")
-        run, settings = args.resume, open_run(args.resume, args.rookie_updates)
+            p.error("--resume takes only --rookie-updates and --league-updates")
+        run, settings = args.resume, open_run(args.resume, args.rookie_updates, args.league_updates)
     else:
         if not args.run:
             p.error("give --run (a new folder) or --resume")
         picked = {f.name: getattr(args, f.name) for f in fields(Settings) if getattr(args, f.name, None) is not None}
-        if args.rookie_updates is not None:
-            picked["rookie_updates"] = args.rookie_updates
         if "hidden" in picked:
             picked["hidden"] = tuple(picked["hidden"])
         run, settings = args.run, Settings(**picked)
