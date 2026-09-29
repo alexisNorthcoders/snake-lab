@@ -149,7 +149,7 @@ function loadGames(g) {
   games = [];
   $("games").replaceChildren();
   $("games-title").textContent = `Sample games · generation ${g}`;
-  const es = source = new EventSource(`games?generation=${g}`);
+  const es = source = new EventSource(`/games?generation=${g}`);
   let current = null;
   es.addEventListener("start", (e) => { current = addGame(JSON.parse(e.data).game); });
   es.addEventListener("tick", (e) => { if (current) current.frames.push(JSON.parse(e.data).frame); if (current && current.frames.length === 1) drawFrame(current); });
@@ -223,7 +223,7 @@ function stamp(data) {
 }
 
 function connect() {
-  const source = new EventSource("events");
+  const source = new EventSource("/events");
   source.onopen = () => { connected = true; drawStatus(); };
   source.onerror = () => { connected = false; drawStatus(); }; // EventSource reconnects by itself, and the server resends the whole log
   source.addEventListener("log", (e) => { const d = JSON.parse(e.data); lines = d.lines; stamp(d); drawChart(); drawStatus(); syncGames(); });

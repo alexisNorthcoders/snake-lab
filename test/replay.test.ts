@@ -76,6 +76,21 @@ describe("replaying a generation's best", () => {
     }
   });
 
+  it("replays a league generation's best in its roster-only fixtures, scored as the trainer scores them", async () => {
+    const run = join(mkdtempSync(join(tmpdir(), "replay-")), "run");
+    const small = { ...settings, generations: 5 };
+    createRun(run, small);
+    await trainRun(run);
+    const g = 4;
+    assert.equal(stageOf(g, small), "league");
+    const brain = readGenerationBest(run, g)!;
+    const { fixtures: played } = drawGeneration(small, g);
+    const kept = sampleFixtures(small, g).map(({ fixture }) => fixture);
+    assert.deepEqual(kept, replayable(played));
+    assert.ok(kept.every(({ opponents }) => opponents.every((o) => "roster" in o)));
+    if (kept.length > 0) assert.ok(Number.isFinite(evaluate(brain, kept, [], small)));
+  });
+
   it("has no brain for a generation not saved yet", () => {
     const run = join(mkdtempSync(join(tmpdir(), "replay-")), "run");
     createRun(run, settings);
