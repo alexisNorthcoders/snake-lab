@@ -118,6 +118,19 @@ obs, reward, terminated, truncated, infos = env.step(actions)  # actions: 0 left
 env.close()
 ```
 
+## Training with PPO
+
+The PPO trainer in `python/` learns a Glutton through that environment: alone on the board, then 1v1 against the rookie. It writes the same run folder as `npm run train`, so the dashboard, `npm run match`, `npm run gauntlet` and `npm run promote` all read it.
+
+```sh
+cd python
+.venv/bin/python -m snake_lab.run --personality glutton --run ../runs/ppo-1 --seed 1
+.venv/bin/python -m snake_lab.run --resume ../runs/ppo-1     # after Ctrl-C, SIGTERM or a crash
+cd .. && npm run gauntlet -- runs/ppo-1/best.json
+```
+
+`--help` lists the settings (stage lengths, network, learning rate and the rest of the PPO's, the Glutton reward's weights); they and how to run it in the background are in `AGENTS.md`.
+
 ## Other commands
 
 `npm run bench -- --matches 500` plays many matches and prints ticks per second. `npm test` runs

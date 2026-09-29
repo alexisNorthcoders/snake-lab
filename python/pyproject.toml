@@ -1,9 +1,9 @@
 [project]
 name = "snake-lab"
 version = "0.1.0"
-description = "The lab's Python half: a vectorised environment over the TypeScript engine"
+description = "The lab's Python half: a vectorised environment over the TypeScript engine, and the PPO trainer"
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.26", "gymnasium>=1.0"]
+dependencies = ["numpy>=1.26", "gymnasium>=1.0", "torch>=2.2"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

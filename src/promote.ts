@@ -89,13 +89,16 @@ function openTarget(target: string) {
 const commandFor = (o: PromoteOptions) =>
   `npm run promote -- ${o.run} ${o.generation} --name ${JSON.stringify(o.name)} --seeds ${o.seeds} --base-seed ${o.baseSeed} --fps ${o.fps}`;
 
+/** How a run was trained: the neuroevolution trainer's settings have no `method`; the PPO trainer's say `ppo`. */
+const methodOf = (settings: TrainSettings): string => (settings as { method?: string }).method ?? "neuroevolution";
+
 function describePromotion(o: PromoteOptions, id: string, settings: TrainSettings, table: string, engine: string, shipsAs: string): string {
   return [
     `# Add ${o.name} to the roster`,
     "",
     `- **Name:** ${o.name} (\`${id}\`)`,
     `- **Personality:** ${settings.personality}`,
-    `- **Generation:** ${o.generation}, of run \`${o.run}\` (neuroevolution, seed ${settings.seed})`,
+    `- **Generation:** ${o.generation}, of run \`${o.run}\` (${methodOf(settings)}, seed ${settings.seed})`,
     `- **Engine:** played under \`${engine}\`; this PR bumps the target's \`engineVersion\`, so it will be tagged \`${shipsAs}\``,
     "",
     "## Training settings",
@@ -162,7 +165,7 @@ export function promote(options: PromoteOptions): PromoteResult {
   const result = verdict(report);
   if (!result.pass) return { id, report, verdict: result, table };
 
-  const entry = { id, name, personality: settings.personality, generation, method: "neuroevolution", brain: `${id}.json` };
+  const entry = { id, name, personality: settings.personality, generation, method: methodOf(settings), brain: `${id}.json` };
   const description = describePromotion(options, id, settings, table, engineTag(), `engine-v${nextVersion}`);
   const descriptionPath = join(run, `promote-${id}.md`);
   const descriptionExisted = existsSync(descriptionPath);
