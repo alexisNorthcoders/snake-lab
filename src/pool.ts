@@ -1,13 +1,14 @@
 import { Worker } from "node:worker_threads";
 import type { Brain } from "snake-colyseus/bots";
-import type { Fixture, Stage, TrainSettings } from "./train.ts";
+import type { Fixture, TrainSettings } from "./train.ts";
 
 /** What a worker is sent: one snake to play through the generation's fixtures. */
 export interface Job {
   index: number;
   brain: Brain;
   fixtures: Fixture[];
-  stage: Stage;
+  /** The whole generation, which the fixtures' population opponents are picked from. */
+  population: Brain[];
   settings: TrainSettings;
 }
 
@@ -41,7 +42,7 @@ export class Pool {
   }
 
   /** Every snake's fitness over the fixtures, in the population's order. */
-  fitness(population: Brain[], fixtures: Fixture[], stage: Stage, settings: TrainSettings): Promise<number[]> {
+  fitness(population: Brain[], fixtures: Fixture[], settings: TrainSettings): Promise<number[]> {
     if (this.failure) return Promise.reject(this.failure);
     if (this.generation) return Promise.reject(new Error("the pool is already playing a generation"));
     return new Promise((resolve, reject) => {
@@ -51,7 +52,7 @@ export class Pool {
       const send = (worker: Worker) => {
         if (next === population.length) return;
         const index = next++;
-        const job: Job = { index, brain: population[index], fixtures, stage, settings };
+        const job: Job = { index, brain: population[index], fixtures, population, settings };
         worker.postMessage(job);
       };
       this.generation = {

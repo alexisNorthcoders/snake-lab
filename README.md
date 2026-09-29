@@ -46,7 +46,7 @@ This trains a population of brains by neuroevolution. Each generation, every sna
 seeded matches (both modes, reaction delays 0 to 4) and is scored by its fitness: for a Glutton, its
 food score plus a small bonus for every tick it survives, averaged over its matches. The fittest are
 kept as they are, and the rest of the next generation is bred from the fittest by crossover and
-mutation. The first generations play alone on the board, the rest against the rookie. It prints the
+mutation. The first generations play alone on the board, then against the rookie, then in the league against varied opponents (some four-player). It trains a Glutton, Survivor or Hunter. It prints the
 best and mean fitness each generation, and at the end how many matches a second and generations an
 hour it played. The same seed and settings always give the same run.
 
