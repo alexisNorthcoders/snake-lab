@@ -11,7 +11,7 @@ import {
   pickBot,
   roster
 } from "snake-colyseus/bots";
-import { MatchOptions, MatchResult, playMatch } from "./match.ts";
+import { MatchOptions, MatchResult, Player, playMatch } from "./match.ts";
 import { DELAYS, MODES } from "./gauntlet.ts";
 import { Pool } from "./pool.ts";
 
@@ -253,6 +253,20 @@ export const fixtures = (
     return { seed, mode, seat, delays, opponents };
   });
 
+/**
+ * Everything generation `g` draws before breeding, from `generationRng(seed, g)`: generation 0's
+ * random brains first, then the fixtures. The trainer and the dashboard both derive a generation
+ * through this, so they can't drift apart. `rng` is left where breeding carries on.
+ */
+export function drawGeneration(settings: TrainSettings, g: number) {
+  const rng = generationRng(settings.seed, g);
+  const initial = g === 0
+    ? Array.from({ length: settings.population }, () => randomBrain(rng, settings.hidden, settings.activation, settings.initialSize))
+    : undefined;
+  const stage = stageOf(g, settings);
+  return { rng, initial, stage, fixtures: fixtures(rng, stage, settings) };
+}
+
 /** How many ticks the snake in `seat` lived: to the tick it died on, or the whole match. Needs the match's events. */
 export const ticksSurvived = (match: MatchResult, seat: number) => {
   if (!match.events) throw new Error("ticks survived needs the match's events: play it with keepEvents");
@@ -297,16 +311,19 @@ export const hunterFitness = (matches: Played, weights: Pick<TrainSettings, "kil
 export const stageOf = (g: number, settings: Pick<TrainSettings, "aloneGenerations" | "rookieGenerations">): Stage =>
   g < settings.aloneGenerations ? "alone" : g < settings.aloneGenerations + settings.rookieGenerations ? "rookie" : "league";
 
+/** The match `fixture` is, with `snake` in its seat; `population` is what its population opponents are picked from. */
+export function fixtureOptions(fixture: Fixture, snake: Player, population: Brain[], fps: number): MatchOptions {
+  const { seed, mode, seat, delays, opponents } = fixture;
+  const others = opponents.map((opponent) =>
+    "roster" in opponent ? pickBot(opponent.roster) : { name: `Opponent ${opponent.population}`, decider: brainDecider(population[opponent.population]) });
+  const players = [...others.slice(0, seat), snake, ...others.slice(seat)];
+  return { seed, mode, fps, seats: players.map((player, i) => ({ player, delay: delays[i] })) };
+}
+
 /** A snake's fitness over the generation's fixtures; `population` is what the fixtures' population opponents are picked from. */
 export function evaluate(brain: Brain, fixtures: Fixture[], population: Brain[], settings: TrainSettings) {
   const snake = { name: "Candidate", decider: brainDecider(brain) };
-  const played = fixtures.map(({ seed, mode, seat, delays, opponents }) => {
-    const others = opponents.map((opponent) =>
-      "roster" in opponent ? pickBot(opponent.roster) : { name: `Opponent ${opponent.population}`, decider: brainDecider(population[opponent.population]) });
-    const players = [...others.slice(0, seat), snake, ...others.slice(seat)];
-    const options: MatchOptions = { seed, mode, fps: settings.fps, seats: players.map((player, i) => ({ player, delay: delays[i] })) };
-    return { match: playMatch(options), seat };
-  });
+  const played = fixtures.map((fixture) => ({ match: playMatch(fixtureOptions(fixture, snake, population, settings.fps)), seat: fixture.seat }));
   switch (settings.personality) {
     case "survivor": return survivorFitness(played, settings);
     case "hunter": return hunterFitness(played, settings);
@@ -376,13 +393,8 @@ export async function train(settings: TrainSettings, options: TrainOptions = {})
     let population = from?.population ?? [];
     let played: { best: Brain; population: Brain[] } | undefined;
     for (let g = from?.generation ?? 0; g < settings.generations; g++) {
-      const rng = generationRng(settings.seed, g);
-      if (g === 0) {
-        population = Array.from({ length: settings.population }, () =>
-          randomBrain(rng, settings.hidden, settings.activation, settings.initialSize));
-      }
-      const stage = stageOf(g, settings);
-      const matches = fixtures(rng, stage, settings);
+      const { rng, initial, stage, fixtures: matches } = drawGeneration(settings, g);
+      if (initial) population = initial;
       const fitness = pool ? await pool.fitness(population, matches, settings) : await fitnessHere(population, matches, settings);
       const line = { generation: g, stage, best: Math.max(...fitness), mean: fitness.reduce((a, b) => a + b, 0) / fitness.length };
       played = { best: population[ranked(fitness)[0]], population };

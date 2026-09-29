@@ -67,13 +67,16 @@ function readCheckpoint(path: string, settings: TrainSettings): Checkpoint {
   return checkpoint;
 }
 
+/** Saved settings as a run reads them: a run from before the league stays in the rookie stage to its end, and gets the defaults of the settings it lacks. */
+export const withDefaults = (saved: Partial<TrainSettings> & { generations: number; aloneGenerations: number }): TrainSettings =>
+  ({ ...DEFAULT_SETTINGS, rookieGenerations: saved.generations - saved.aloneGenerations, ...saved }) as TrainSettings;
+
 /** A run folder's settings, and its latest checkpoint if it has one. Drops log lines past the checkpoint. */
 export function openRun(run: string): { settings: TrainSettings; from?: Checkpoint; log: GenerationLog[] } {
   const files = runFiles(run);
   if (!existsSync(files.settings)) throw new Error(`${run} isn't a run folder: it has no settings.json`);
   const saved = JSON.parse(readFileSync(files.settings, "utf8"));
-  // A run from before the league stays in the rookie stage to its end, and gets the defaults of the settings it lacks.
-  const settings: TrainSettings = { ...DEFAULT_SETTINGS, rookieGenerations: saved.generations - saved.aloneGenerations, ...saved };
+  const settings = withDefaults(saved);
   const from: Checkpoint | undefined = existsSync(files.checkpoint) ? readCheckpoint(files.checkpoint, settings) : undefined;
   const played = from?.generation ?? 0;
   const lines = (existsSync(files.log) ? readFileSync(files.log, "utf8") : "").split("\n");

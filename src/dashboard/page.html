@@ -19,6 +19,14 @@
   svg text { fill: var(--muted); font-size: 11px; }
   .legend { display: flex; gap: 1rem; flex-wrap: wrap; color: var(--muted); font-size: .85rem; margin-top: .25rem; }
   .legend i { display: inline-block; width: .9rem; height: .6rem; margin-right: .3rem; vertical-align: baseline; }
+  #games-bar { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: 1.25rem 0 .5rem; }
+  #games-bar h2 { margin: 0; font-size: 1.1rem; } #games-bar label { color: var(--muted); font-size: .85rem; }
+  #games-bar input { width: 3.5rem; } button { font: inherit; cursor: pointer; }
+  #games { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; }
+  .game { border: 1px solid var(--grid); border-radius: 6px; padding: .4rem; font-size: .8rem; }
+  .game canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; background: var(--grid); border-radius: 3px; }
+  .game .meta { color: var(--muted); } .game .result { font-weight: 600; min-height: 1.2em; }
+  svg { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -30,12 +38,19 @@
   <span><i style="background:var(--best)"></i>best</span><span><i style="background:var(--mean)"></i>mean</span>
   <span><i style="background:var(--alone)"></i>alone</span><span><i style="background:var(--rookie)"></i>rookie</span><span><i style="background:var(--league)"></i>league</span>
 </div>
+<div id="games-bar">
+  <h2 id="games-title">Sample games</h2>
+  <button id="follow" type="button">follow the latest</button>
+  <label>speed <input id="speed" type="number" min="1" max="60" step="1"> ticks/s</label>
+  <span class="legend" id="games-note">click the chart to pin a generation</span>
+</div>
+<div id="games"></div>
 <script>
 "use strict";
 const NS = "http://www.w3.org/2000/svg";
 const W = 900, H = 400, M = { l: 56, r: 12, t: 10, b: 28 };
 const $ = (id) => document.getElementById(id);
-let run = null, lines = [], updatedAt = null, skew = 0, connected = false;
+let pinned = null, shown = null, source = null, speed = 8, run = null, lines = [], updatedAt = null, skew = 0, connected = false;
 
 const el = (name, attrs, text) => {
   const node = document.createElementNS(NS, name);
@@ -88,6 +103,88 @@ function drawChart() {
   }
 }
 
+// ---- the grid of sample games: the server plays each match, the page draws its ticks ----
+const COLORS = ["#0b6bcb", "#d1701c", "#3a9d5d", "#b03ab0"], CELL = 10, BOARD = 20;
+let games = [];
+
+function drawFrame(game) {
+  const ctx = game.canvas.getContext("2d"), frame = game.frames[Math.min(game.at, game.frames.length - 1)];
+  ctx.clearRect(0, 0, BOARD * CELL, BOARD * CELL);
+  ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+  ctx.fillRect(0, 0, BOARD * CELL, BOARD * CELL);
+  for (const f of frame.food) { ctx.fillStyle = "#c0392b"; ctx.beginPath(); ctx.arc(f.x * CELL + CELL / 2, f.y * CELL + CELL / 2, CELL / 3, 0, 7); ctx.fill(); }
+  frame.snakes.forEach((snake, i) => {
+    ctx.globalAlpha = snake.dead ? 0.35 : 1;
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    snake.cells.forEach((c, k) => ctx.fillRect(c.x * CELL + (k ? 1 : 0), c.y * CELL + (k ? 1 : 0), CELL - (k ? 2 : 0), CELL - (k ? 2 : 0)));
+    ctx.globalAlpha = 1;
+  });
+  game.tickLabel.textContent = `tick ${frame.tick}`;
+}
+
+const ending = (game) => {
+  const { result, players } = game.end, info = game.info;
+  const name = result.winnerId ? `seat ${result.winnerId.slice(4)}` : null;
+  const us = `seat ${info.seat}`;
+  const outcome = !result.winnerId ? (result.reason === "time-up" ? "time up, no winner" : "draw") : name === us ? "won" : "lost";
+  return `${outcome} · ${players.map((p) => `${p.name} ${p.score}`).join(", ")} · ${game.end.ticks} ticks`;
+};
+
+function addGame(info) {
+  const box = document.createElement("div"), canvas = document.createElement("canvas"), meta = document.createElement("div"), result = document.createElement("div"), tickLabel = document.createElement("span");
+  box.className = "game"; canvas.width = canvas.height = BOARD * CELL; meta.className = "meta"; result.className = "result";
+  const others = info.names.filter((_, i) => i !== info.seat);
+  meta.textContent = `#${info.index + 1} vs ${others.length ? others.join(", ") : "nobody"} · ${info.mode} · delays ${info.delays.join("/")} (ours ${info.delays[info.seat]}) · seat ${info.seat}`;
+  meta.appendChild(document.createTextNode(" · ")); meta.appendChild(tickLabel);
+  box.append(canvas, meta, result);
+  $("games").appendChild(box);
+  const game = { info, canvas, result, tickLabel, frames: [], end: null, at: 0, nextAt: 0, holdUntil: 0 };
+  games.push(game);
+  return game;
+}
+
+function loadGames(g) {
+  if (source) source.close();
+  shown = g;
+  games = [];
+  $("games").replaceChildren();
+  $("games-title").textContent = `Sample games · generation ${g}`;
+  const es = source = new EventSource(`games?generation=${g}`);
+  let current = null;
+  es.addEventListener("start", (e) => { current = addGame(JSON.parse(e.data).game); });
+  es.addEventListener("tick", (e) => { if (current) current.frames.push(JSON.parse(e.data).frame); if (current && current.frames.length === 1) drawFrame(current); });
+  es.addEventListener("end", (e) => { if (current) { current.end = JSON.parse(e.data); current.result.textContent = ending(current); } });
+  es.addEventListener("done", () => es.close());
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED || source !== es) return; es.close(); if (games.length === 0) $("games").textContent = `generation ${g} has no games to show`; };
+}
+
+function frameLoop(now) {
+  const step = 1000 / speed;
+  for (const game of games) {
+    if (!game.frames.length) continue;
+    if (game.nextAt === 0) game.nextAt = now;
+    if (now < game.nextAt) continue;
+    const last = game.frames.length - 1;
+    if (game.at >= last) {
+      if (!game.end) continue; // still streaming in
+      if (!game.holdUntil) game.holdUntil = now + 1500;
+      if (now >= game.holdUntil) { game.at = 0; game.holdUntil = 0; game.nextAt = now + step; drawFrame(game); }
+      continue;
+    }
+    game.at++; game.nextAt = now + step; drawFrame(game);
+  }
+  requestAnimationFrame(frameLoop);
+}
+
+/** The generation the grid should show: the pinned one, else the latest logged. */
+function syncGames() {
+  const latest = lines.length ? lines[lines.length - 1].generation : null;
+  const want = pinned !== null ? pinned : latest;
+  $("follow").hidden = pinned === null;
+  $("games-note").textContent = pinned !== null ? `pinned to generation ${pinned}` : "following the latest · click the chart to pin a generation";
+  if (want !== null && want !== shown) loadGames(want);
+}
+
 function age(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
@@ -129,11 +226,11 @@ function connect() {
   const source = new EventSource("events");
   source.onopen = () => { connected = true; drawStatus(); };
   source.onerror = () => { connected = false; drawStatus(); }; // EventSource reconnects by itself, and the server resends the whole log
-  source.addEventListener("log", (e) => { const d = JSON.parse(e.data); lines = d.lines; stamp(d); drawChart(); drawStatus(); });
+  source.addEventListener("log", (e) => { const d = JSON.parse(e.data); lines = d.lines; stamp(d); drawChart(); drawStatus(); syncGames(); });
   source.addEventListener("generation", (e) => {
     const d = JSON.parse(e.data);
     lines = lines.filter((l) => l.generation < d.line.generation).concat(d.line);
-    stamp(d); drawChart(); drawStatus();
+    stamp(d); drawChart(); drawStatus(); syncGames();
   });
   source.addEventListener("status", (e) => { stamp(JSON.parse(e.data)); drawStatus(); });
 }
@@ -142,8 +239,21 @@ fetch("api/run").then((r) => r.json()).then((r) => {
   run = r;
   $("name").textContent = `${r.name} · ${r.settings.personality}`;
   document.title = `${r.name} · snake-lab`;
+  speed = r.replay.speed;
+  $("speed").value = speed;
   drawFacts(); drawChart(); drawStatus();
   connect();
+  requestAnimationFrame(frameLoop);
+});
+$("speed").addEventListener("input", (e) => { const v = Number(e.target.value); if (v > 0) speed = v; });
+$("follow").addEventListener("click", () => { pinned = null; syncGames(); });
+$("chart").addEventListener("click", (e) => {
+  if (!run || !lines.length) return;
+  const box = e.currentTarget.getBoundingClientRect(), vx = (e.clientX - box.left) / box.width * W;
+  const total = Math.max(run.settings.generations, lines.length, 1);
+  const g = Math.floor((vx - M.l) / (W - M.l - M.r) * total);
+  pinned = Math.min(Math.max(g, 0), lines[lines.length - 1].generation);
+  syncGames();
 });
 setInterval(() => run && drawStatus(), 1000);
 </script>

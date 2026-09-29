@@ -29,7 +29,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/run.ts`: the run folder. `createRun`, `trainRun` (from generation 0 or the latest
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
-- `src/dashboard/`: the training dashboard. `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, and `/events` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
+- `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
 - `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `test/`: `*.test.ts`, one per module.
@@ -66,7 +66,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   the name is in the target's roster, the target isn't a `snake-colyseus` checkout, or the
   generation's brain is missing or invalid. It never runs git. See "Promoting".
 
-- `npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1]`: serves a page for one run: its
+- `npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1] [--speed 8] [--games 6]`: serves a page for one run: its
   settings, the latest generation and stage, whether the log is still being written to, and a chart of best
   and mean fitness per generation with the stages shaded. It grows as the run trains, with no reload (see "The dashboard").
 
@@ -76,6 +76,16 @@ It reads `settings.json` and `log.jsonl` from the run folder and never writes th
 nothing. The page gets the whole log when it connects and then one `generation` event per new line (a `log`
 event with the whole log again if a resume rewrote lines). If the connection drops, the browser reconnects and
 is sent the whole log. A folder without a valid `settings.json` is refused. One run per server.
+
+**The grid of sample games.** Under the chart, a grid shows a generation's best snake (`generations/gen-NNNN.json`)
+playing that generation's own fixtures, replayed from the seed through `drawGeneration`, never recorded. Fixtures
+against a population opponent are left out (that population isn't on disk); alone, rookie and roster-opponent
+fixtures are kept. `GET /games?generation=N` plays them on the server and streams SSE: `generation`, then each game's
+`start` (opponents, mode, delays, seat), a `tick` per board (0 is the board as dealt: cells, food, scores, deaths) and an
+`end` (the result), then `done`; 404 if that generation isn't saved. The page draws each game on a canvas at `--speed`
+ticks a second (default 8, editable on the page), loops it, and labels it with opponent, mode, delays and result. It
+follows the latest generation; click the chart to pin one, "follow the latest" to go back. `--games` (default 6) caps
+the games shown per generation, to keep the replays light next to the trainer's workers.
 
 Run it on the same box as the run. It listens on `127.0.0.1`, so from your own machine:
 
