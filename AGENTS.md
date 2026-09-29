@@ -29,7 +29,8 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/run.ts`: the run folder. `createRun`, `trainRun` (from generation 0 or the latest
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
-- `src/cli/`: the `match`, `bench`, `gauntlet`, `train` and `promote` commands, and the options they share.
+- `src/dashboard/`: the training dashboard. `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, and `/events` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
+- `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `test/`: `*.test.ts`, one per module.
 
@@ -64,6 +65,27 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   exits 1 and writes nothing. It also refuses, writing nothing, when the id (a slug of the name) or
   the name is in the target's roster, the target isn't a `snake-colyseus` checkout, or the
   generation's brain is missing or invalid. It never runs git. See "Promoting".
+
+- `npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1]`: serves a page for one run: its
+  settings, the latest generation and stage, whether the log is still being written to, and a chart of best
+  and mean fitness per generation with the stages shaded. It grows as the run trains, with no reload (see "The dashboard").
+
+## The dashboard
+
+It reads `settings.json` and `log.jsonl` from the run folder and never writes there; the trainer publishes
+nothing. The page gets the whole log when it connects and then one `generation` event per new line (a `log`
+event with the whole log again if a resume rewrote lines). If the connection drops, the browser reconnects and
+is sent the whole log. A folder without a valid `settings.json` is refused. One run per server.
+
+Run it on the same box as the run. It listens on `127.0.0.1`, so from your own machine:
+
+```sh
+ssh -L 8080:127.0.0.1:8080 pi@<the Pi>      # then open http://localhost:8080
+```
+
+`--host 0.0.0.0` (or the Pi's LAN address) listens on the LAN: only do that on the Pi's home network. It has no
+login: never expose it publicly on the VPS, keep it on `127.0.0.1` and use `ssh -L`. Run it in the background
+like a trainer (see "In the background"), directly with `npx tsx src/cli/dashboard.ts <run>`.
 
 ## Promoting
 

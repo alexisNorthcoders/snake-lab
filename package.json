@@ -14,6 +14,7 @@
     "gauntlet": "tsx src/cli/gauntlet.ts",
     "train": "tsx src/cli/train.ts",
     "promote": "tsx src/cli/promote.ts",
+    "dashboard": "tsx src/cli/dashboard.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },

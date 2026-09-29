@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snake-lab dashboard</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #1a1a1a; --muted: #6b6b6b; --grid: #ddd; --best: #0b6bcb; --mean: #d1701c;
+    --alone: #8884; --rookie: #e0b03055; --league: #3a9d5d44; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #16181c; --fg: #e6e6e6; --muted: #9a9a9a; --grid: #333; --best: #5aa9ff; --mean: #f0a052; } }
+  body { margin: 0; padding: 1rem 1.5rem; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+  h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+  #status { color: var(--muted); margin-bottom: 1rem; }
+  #status .live { color: #2a9d4b; font-weight: 600; }
+  dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .4rem 1rem; margin: 0 0 1rem; }
+  dl div { border-left: 3px solid var(--grid); padding-left: .5rem; }
+  dt { color: var(--muted); font-size: .8rem; } dd { margin: 0; font-weight: 600; }
+  svg { width: 100%; height: auto; max-height: 60vh; display: block; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; color: var(--muted); font-size: .85rem; margin-top: .25rem; }
+  .legend i { display: inline-block; width: .9rem; height: .6rem; margin-right: .3rem; vertical-align: baseline; }
+</style>
+</head>
+<body>
+<h1 id="name">…</h1>
+<div id="status">connecting…</div>
+<dl id="facts"></dl>
+<svg id="chart" viewBox="0 0 900 400" role="img" aria-label="Best and mean fitness per generation"></svg>
+<div class="legend">
+  <span><i style="background:var(--best)"></i>best</span><span><i style="background:var(--mean)"></i>mean</span>
+  <span><i style="background:var(--alone)"></i>alone</span><span><i style="background:var(--rookie)"></i>rookie</span><span><i style="background:var(--league)"></i>league</span>
+</div>
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const W = 900, H = 400, M = { l: 56, r: 12, t: 10, b: 28 };
+const $ = (id) => document.getElementById(id);
+let run = null, lines = [], updatedAt = null, skew = 0, connected = false;
+
+const el = (name, attrs, text) => {
+  const node = document.createElementNS(NS, name);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const fmt = (n) => Math.abs(n) >= 1000 ? n.toFixed(0) : Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2);
+
+function stageBounds(s) {
+  const alone = s.aloneGenerations ?? 0;
+  const rookie = s.rookieGenerations ?? (s.generations - alone); // a run from before the league stays in rookie
+  return [["alone", 0, alone], ["rookie", alone, alone + rookie], ["league", alone + rookie, s.generations]];
+}
+
+function niceTicks(lo, hi, count) {
+  const span = hi - lo || 1, raw = span / count, pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= raw);
+  const ticks = [];
+  for (let t = Math.ceil(lo / step) * step; t <= hi + 1e-9; t += step) ticks.push(t);
+  return ticks;
+}
+
+function drawChart() {
+  const svg = $("chart");
+  svg.replaceChildren();
+  if (!run) return;
+  const total = Math.max(run.settings.generations, lines.length, 1);
+  const values = lines.flatMap((l) => [l.best, l.mean]);
+  let lo = Math.min(0, ...values), hi = Math.max(1, ...values);
+  if (!values.length) { lo = 0; hi = 1; }
+  const x = (g) => M.l + (g / total) * (W - M.l - M.r);
+  const y = (v) => H - M.b - ((v - lo) / (hi - lo)) * (H - M.t - M.b);
+  for (const [stage, from, to] of stageBounds(run.settings)) {
+    if (to <= from) continue;
+    const r = el("rect", { x: x(from), y: M.t, width: x(Math.min(to, total)) - x(from), height: H - M.t - M.b, fill: `var(--${stage})` });
+    r.appendChild(el("title", {}, stage));
+    svg.appendChild(r);
+    svg.appendChild(el("text", { x: x(from) + 4, y: M.t + 12 }, stage));
+  }
+  for (const t of niceTicks(lo, hi, 5)) {
+    svg.appendChild(el("line", { x1: M.l, x2: W - M.r, y1: y(t), y2: y(t), stroke: "var(--grid)" }));
+    svg.appendChild(el("text", { x: M.l - 6, y: y(t) + 4, "text-anchor": "end" }, fmt(t)));
+  }
+  for (const t of niceTicks(0, total, 8)) svg.appendChild(el("text", { x: x(t), y: H - 8, "text-anchor": "middle" }, String(t)));
+  for (const [key, color] of [["mean", "var(--mean)"], ["best", "var(--best)"]]) {
+    if (!lines.length) break;
+    const pts = lines.map((l) => `${x(l.generation + 0.5).toFixed(1)},${y(l[key]).toFixed(1)}`).join(" ");
+    svg.appendChild(el("polyline", { points: pts, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round" }));
+  }
+}
+
+function age(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
+}
+
+function drawStatus() {
+  const last = lines[lines.length - 1];
+  const parts = [];
+  parts.push(last ? `generation ${last.generation} of ${run ? run.settings.generations : "?"}, stage ${last.stage}` : "no generations yet");
+  if (updatedAt !== null) {
+    const ago = Date.now() + skew - updatedAt;
+    parts.push(ago < 120000 && last && run && last.generation + 1 < run.settings.generations
+      ? `<span class="live">training</span>, last line ${age(ago)} ago`
+      : `not being written to, last line ${age(ago)} ago`);
+  }
+  if (!connected) parts.push("disconnected, retrying…");
+  $("status").innerHTML = parts.join(" · ");
+}
+
+function drawFacts() {
+  const s = run.settings;
+  const facts = [["personality", s.personality], ["seed", s.seed], ["generations", s.generations], ["population", s.population],
+    ["matches a generation", s.matches], ["hidden", JSON.stringify(s.hidden)], ["stages (alone / rookie / league)",
+    stageBounds(s).map(([, f, t]) => t - f).join(" / ")], ["mutation", `${s.mutationRate} × ${s.mutationSize}`], ["elites / tournament", `${s.elites} / ${s.tournament}`]];
+  $("facts").replaceChildren(...facts.filter(([, v]) => v !== undefined).map(([k, v]) => {
+    const d = document.createElement("div"), dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k; dd.textContent = v; d.append(dt, dd);
+    return d;
+  }));
+}
+
+function stamp(data) {
+  if (data.updatedAt !== undefined && data.updatedAt !== null) updatedAt = data.updatedAt;
+  else if (data.updatedAt === null) updatedAt = null;
+  skew = data.now - Date.now();
+}
+
+function connect() {
+  const source = new EventSource("events");
+  source.onopen = () => { connected = true; drawStatus(); };
+  source.onerror = () => { connected = false; drawStatus(); }; // EventSource reconnects by itself, and the server resends the whole log
+  source.addEventListener("log", (e) => { const d = JSON.parse(e.data); lines = d.lines; stamp(d); drawChart(); drawStatus(); });
+  source.addEventListener("generation", (e) => {
+    const d = JSON.parse(e.data);
+    lines = lines.filter((l) => l.generation < d.line.generation).concat(d.line);
+    stamp(d); drawChart(); drawStatus();
+  });
+  source.addEventListener("status", (e) => { stamp(JSON.parse(e.data)); drawStatus(); });
+}
+
+fetch("api/run").then((r) => r.json()).then((r) => {
+  run = r;
+  $("name").textContent = `${r.name} · ${r.settings.personality}`;
+  document.title = `${r.name} · snake-lab`;
+  drawFacts(); drawChart(); drawStatus();
+  connect();
+});
+setInterval(() => run && drawStatus(), 1000);
+</script>
+</body>
+</html>
