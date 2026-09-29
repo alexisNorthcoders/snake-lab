@@ -83,6 +83,18 @@ it writes nothing and exits 1. It never runs git. What's left is for a person:
 2. When it's merged and tagged, bump the `snake-colyseus` pin in this repo's `package.json` to the
    new `engine-vX.Y.Z` and `npm install`.
 
+## The training dashboard
+
+```sh
+npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1]
+```
+
+Serves a page next to a run: its settings, the latest generation and stage, and a chart of best and
+mean fitness per generation with the stages shaded. A run that's training grows on the chart as each
+generation lands, with no reload; a finished or stopped one shows complete. It only reads the run
+folder. It listens on `127.0.0.1`: from another machine use `ssh -L 8080:127.0.0.1:8080 <box>` and open
+`http://localhost:8080`. Never expose it publicly (`--host` is for the Pi's LAN).
+
 ## Other commands
 
 `npm run bench -- --matches 500` plays many matches and prints ticks per second. `npm test` runs
