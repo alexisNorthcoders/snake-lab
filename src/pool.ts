@@ -69,6 +69,8 @@ export class Pool {
         fail: (error) => {
           this.failure ??= error;
           this.generation = undefined;
+          next = population.length; // no new jobs
+          void this.close();
           reject(error);
         }
       };
@@ -78,6 +80,7 @@ export class Pool {
 
   async close() {
     const workers = this.workers;
+    if (workers.length === 0) return;
     this.workers = [];
     this.failure ??= new Error("the pool is closed");
     await Promise.all(workers.map((worker) => {

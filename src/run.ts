@@ -49,12 +49,28 @@ export function createRun(run: string, settings: TrainSettings) {
   writeWhole(files.settings, json(settings));
 }
 
+/** Reads a checkpoint, refusing one that isn't whole: wrong shape, or not `population` brains of the run's size. */
+function readCheckpoint(path: string, settings: TrainSettings): Checkpoint {
+  let checkpoint: Checkpoint;
+  try {
+    checkpoint = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`${path} isn't whole JSON (${(error as Error).message}): the run can't be resumed from it`);
+  }
+  const { generation, population } = checkpoint ?? ({} as Partial<Checkpoint>);
+  if (!Number.isInteger(generation) || generation < 0 || !Array.isArray(population) || population.length !== settings.population ||
+    population.some((brain) => !brain || typeof brain !== "object" || !Array.isArray((brain as { layers?: unknown }).layers))) {
+    throw new Error(`${path} is malformed: it needs a generation and ${settings.population} brains`);
+  }
+  return checkpoint;
+}
+
 /** A run folder's settings, and its latest checkpoint if it has one. Drops log lines past the checkpoint. */
 export function openRun(run: string): { settings: TrainSettings; from?: Checkpoint; log: GenerationLog[] } {
   const files = runFiles(run);
   if (!existsSync(files.settings)) throw new Error(`${run} isn't a run folder: it has no settings.json`);
   const settings: TrainSettings = JSON.parse(readFileSync(files.settings, "utf8"));
-  const from: Checkpoint | undefined = existsSync(files.checkpoint) ? JSON.parse(readFileSync(files.checkpoint, "utf8")) : undefined;
+  const from: Checkpoint | undefined = existsSync(files.checkpoint) ? readCheckpoint(files.checkpoint, settings) : undefined;
   const played = from?.generation ?? 0;
   const lines = (existsSync(files.log) ? readFileSync(files.log, "utf8") : "").split("\n");
   if (lines.length - 1 < played) throw new Error(`${files.log} has fewer lines than the checkpoint's ${played} generations`);
