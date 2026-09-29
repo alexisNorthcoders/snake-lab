@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), and promotes a generation to the roster (#9). No PPO yet.
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). No PPO yet.
 
 ## Stack and layout
 
@@ -22,7 +22,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   count as not winning). `promote` uses it. `formatReport` prints a report.
 - `src/train.ts`: the neuroevolution trainer. `train` (the whole run, or the rest of one from a
   `Checkpoint`), and its parts: `randomBrain`, `crossover`, `mutate`, `breed`, `fixtures` (a
-  generation's matches), `evaluate`, `gluttonFitness`. A genome is a brain in `snake-colyseus/bots`'
+  generation's matches), `evaluate`, `survivorFitness`, `hunterFitness`, `kills`, `gluttonFitness`. A genome is a brain in `snake-colyseus/bots`'
   format, played through `brainDecider`, so it's saved with no conversion.
 - `src/pool.ts` and `src/worker.ts`: the worker threads a generation's snakes are shared out to, one
   snake a job, each fitness put back in the snake's place.
@@ -50,7 +50,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `npm run train -- --personality glutton --run runs/glutton-1 --seed 1`: trains by neuroevolution
   and writes the run folder (see "Long runs"), printing each generation's log line as it goes and a
   summary at the end: matches a second and generations an hour. The folder mustn't exist yet;
-  `runs/` is ignored by git. Only `glutton` can be trained; the others are refused. `--help` lists
+  `runs/` is ignored by git. `--personality` is `glutton`, `survivor` or `hunter` (see "Personalities and stages"). `--help` lists
   every setting. `--workers` (default: one a core) sets the threads. Any saved brain plays in
   `match --players` and the `gauntlet`.
 - `npm run train -- --resume runs/glutton-1`: carries on from the latest checkpoint. Only
@@ -81,7 +81,9 @@ Every one is a `train` option (`--help`) and a field of `TrainSettings`; default
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `generations` | 50 | generations in all |
-| `aloneGenerations` (`--alone`) | 10 | the first ones, played alone on the board; the rest are 1v1 against the rookie |
+| `aloneGenerations` (`--alone`) | 10 | the first ones, played alone on the board |
+| `rookieGenerations` (`--rookie`) | 20 | the next ones, 1v1 against the rookie; the rest, to the end, are the league |
+| `fourPlayerShare` (`--four-player`) | 0.2 | the league's share of four-player matches; the rest are 1v1 |
 | `population` | 50 | snakes a generation |
 | `elites` | 2 | the fittest, copied into the next generation unchanged |
 | `tournament` | 3 | a parent is the fittest of this many drawn at random |
@@ -93,12 +95,32 @@ Every one is a `train` option (`--help`) and a field of `TrainSettings`; default
 | `matches` | 10 | matches each snake plays a generation: every snake the same ones |
 | `fps` | 8 | ticks per second, which sets a timed round's length |
 | `foodWeight`, `tickBonus` | 1, 0.1 | Glutton fitness: food score × `foodWeight` + ticks survived × `tickBonus`, averaged over the snake's matches |
+| `aliveWeight`, `survivorWinBonus` | 1, 200 | Survivor fitness: ticks alive × `aliveWeight` + `survivorWinBonus` for a win |
+| `killBonus`, `hunterWinBonus`, `foodBonus` | 100, 50, 0.1 | Hunter fitness: kills × `killBonus` + `hunterWinBonus` for a win + food score × `foodBonus` |
 
 A child's parents cross unit by unit: each unit takes its incoming weights and bias whole from one
-parent. A generation's matches draw their seed, mode (both), delay (0 to 4, the rookie at the same)
-and seat from the generation's generator. At the defaults a generation is 500 matches: on the Pi's
+parent. A generation's matches draw their seed, mode (both), opponents, seat and each seat's delay (0 to 4,
+separately) from the generation's generator. At the defaults a generation is 500 matches: on the Pi's
 4 cores, about 6 seconds a generation while they play alone and longer as they learn to live
 against the rookie (see `docs/benchmarks/`).
+
+## Personalities and stages
+
+A win is the engine's `winnerId`. A kill is a `died` event whose `by` is the snake, except a head-on
+collision (`cause: "head-on"`): the engine names each snake the other as `by`, but both die, so it
+counts as a kill for neither.
+
+Generations go through three **stages**, named in each log line and in the checkpoint (which holds
+the stage of the generation it carries on with, so a resume lands in the right one):
+
+- `alone`: the first `aloneGenerations`, one snake on the board.
+- `rookie`: the next `rookieGenerations`, 1v1 against the rookie.
+- `league`: the rest, to the end. Each match's opponents are drawn from the generation's seed, half
+  from the current population (as it was played) and half from the roster in the pinned package,
+  the rookie included. `fourPlayerShare` of the matches have three opponents; the rest have one.
+  Every snake in a generation plays the same fixtures, so faces the same opponents.
+
+A run from before the league has no `rookieGenerations`: it stays in the rookie stage to its end.
 
 ## Long runs
 

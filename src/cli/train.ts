@@ -7,7 +7,7 @@ import { createRun, openRun, runFiles, trainRun } from "../run.ts";
 import { exit, orExit, parseNumber } from "./args.ts";
 
 const defaults = DEFAULT_SETTINGS;
-const usage = `Trains a population of brains by neuroevolution, alone on the board and then against the rookie.
+const usage = `Trains a population of brains by neuroevolution, alone on the board, then against the rookie, then in the league.
 Writes into the run folder: settings.json, log.jsonl (one line a generation, printed as it goes),
 generations/gen-NNNN.json (each generation's fittest brain), best.json (the latest one's) and
 checkpoint.json (the population to carry on from). Ctrl-C or SIGTERM stops after the current
@@ -16,13 +16,15 @@ generation; a second one abandons it. Either way the latest checkpoint is kept.
 Usage: npm run train -- --personality glutton --run <folder> [options]
        npm run train -- --resume <folder> [--generations <n>] [--workers <n>]
 
-  --personality <p>      what to train for: only glutton for now
+  --personality <p>      what to train for: glutton, survivor or hunter
   --run <folder>         the run folder to write, which mustn't exist yet (runs/ is ignored by git)
   --resume <folder>      carry on a run from its latest checkpoint, with its settings
   --workers <n>          threads to play matches on; never changes the result (default ${availableParallelism()}, one a core)
   --seed <n>             the run's seed, a whole number in [0, 2^32) (default 1)
   --generations <n>      generations in all (default ${defaults.generations})
-  --alone <n>            of them, how many are played alone before the rookie (default ${defaults.aloneGenerations})
+  --alone <n>            of them, how many are played alone first (default ${defaults.aloneGenerations})
+  --rookie <n>           then how many against the rookie; the rest are the league (default ${defaults.rookieGenerations})
+  --four-player <p>      the league's share of four-player matches (default ${defaults.fourPlayerShare})
   --population <n>       snakes a generation (default ${defaults.population})
   --elites <n>           the fittest, kept unchanged (default ${defaults.elites})
   --tournament <n>       snakes a parent is the fittest of (default ${defaults.tournament})
@@ -34,7 +36,12 @@ Usage: npm run train -- --personality glutton --run <folder> [options]
   --matches <n>          matches each snake plays a generation (default ${defaults.matches})
   --fps <n>              ticks per second, which sets a timed round's length (default ${defaults.fps})
   --food-weight <w>      fitness per point of food score (default ${defaults.foodWeight})
-  --tick-bonus <w>       fitness per tick survived (default ${defaults.tickBonus})`;
+  --tick-bonus <w>       glutton fitness per tick survived (default ${defaults.tickBonus})
+  --alive-weight <w>     survivor fitness per tick alive (default ${defaults.aliveWeight})
+  --survivor-win-bonus <w>  survivor fitness for a win (default ${defaults.survivorWinBonus})
+  --kill-bonus <w>       hunter fitness per kill (default ${defaults.killBonus})
+  --hunter-win-bonus <w> hunter fitness for a win (default ${defaults.hunterWinBonus})
+  --food-bonus <w>       hunter fitness per point of food score (default ${defaults.foodBonus})`;
 
 const options = {
   personality: { type: "string" },
@@ -42,6 +49,8 @@ const options = {
   seed: { type: "string", default: "1" },
   generations: { type: "string", default: String(defaults.generations) },
   alone: { type: "string", default: String(defaults.aloneGenerations) },
+  rookie: { type: "string", default: String(defaults.rookieGenerations) },
+  "four-player": { type: "string", default: String(defaults.fourPlayerShare) },
   population: { type: "string", default: String(defaults.population) },
   elites: { type: "string", default: String(defaults.elites) },
   tournament: { type: "string", default: String(defaults.tournament) },
@@ -54,6 +63,11 @@ const options = {
   fps: { type: "string", default: String(defaults.fps) },
   "food-weight": { type: "string", default: String(defaults.foodWeight) },
   "tick-bonus": { type: "string", default: String(defaults.tickBonus) },
+  "alive-weight": { type: "string", default: String(defaults.aliveWeight) },
+  "survivor-win-bonus": { type: "string", default: String(defaults.survivorWinBonus) },
+  "kill-bonus": { type: "string", default: String(defaults.killBonus) },
+  "hunter-win-bonus": { type: "string", default: String(defaults.hunterWinBonus) },
+  "food-bonus": { type: "string", default: String(defaults.foodBonus) },
   resume: { type: "string" },
   workers: { type: "string", default: String(availableParallelism()) },
   help: { type: "boolean" }
@@ -83,6 +97,8 @@ const { run, workers, generations } = orExit(usage, () => {
     seed: number("seed"),
     generations: number("generations"),
     aloneGenerations: number("alone"),
+    rookieGenerations: number("rookie"),
+    fourPlayerShare: number("four-player"),
     population: number("population"),
     elites: number("elites"),
     tournament: number("tournament"),
@@ -94,7 +110,12 @@ const { run, workers, generations } = orExit(usage, () => {
     matches: number("matches"),
     fps: number("fps"),
     foodWeight: number("food-weight"),
-    tickBonus: number("tick-bonus")
+    tickBonus: number("tick-bonus"),
+    aliveWeight: number("alive-weight"),
+    survivorWinBonus: number("survivor-win-bonus"),
+    killBonus: number("kill-bonus"),
+    hunterWinBonus: number("hunter-win-bonus"),
+    foodBonus: number("food-bonus")
   };
   createRun(args.run, settings);
   return { run: args.run, workers, generations: undefined };

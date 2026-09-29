@@ -102,6 +102,30 @@ describe("a run folder", () => {
   });
 });
 
+describe("a run through the stages", () => {
+  const staged = { ...short, personality: "hunter" as const, generations: 4, aloneGenerations: 0, rookieGenerations: 2, fourPlayerShare: 0.5 };
+
+  it("stopped in the rookie stage and resumed into the league, matches a run straight through", async () => {
+    const expected = await straight(staged);
+    const run = await stoppedAfter(2, staged);
+    assert.equal(JSON.parse(readFileSync(runFiles(run).checkpoint, "utf8")).stage, "league");
+    await trainRun(run, { workers: 2 });
+    assert.deepEqual(contents(run), expected);
+    assert.deepEqual(expected["log.jsonl"].trim().split("\n").map((l) => JSON.parse(l).stage), ["rookie", "rookie", "league", "league"]);
+  });
+
+  it("puts the stage in the checkpoint, and resumes an old checkpoint without one", async () => {
+    const run = await stoppedAfter(1, staged);
+    const files = runFiles(run);
+    const checkpoint = JSON.parse(readFileSync(files.checkpoint, "utf8"));
+    assert.equal(checkpoint.stage, "rookie");
+    delete checkpoint.stage;
+    writeFileSync(files.checkpoint, JSON.stringify(checkpoint));
+    await trainRun(run);
+    assert.deepEqual(contents(run), await straight(staged));
+  });
+});
+
 describe("train --resume", () => {
   const args = ["--personality", "glutton", "--seed", "3", "--generations", "20", "--alone", "1", "--population", "6", "--matches", "2", "--hidden", "4"];
   const cli = (...more: string[]) => spawnSync(process.execPath, ["--import", "tsx", "src/cli/train.ts", ...more], { encoding: "utf8" });

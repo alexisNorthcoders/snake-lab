@@ -17,6 +17,9 @@ import {
   crossover,
   fixtures,
   gluttonFitness,
+  hunterFitness,
+  kills,
+  survivorFitness,
   mutate,
   randomBrain,
   ranked,
@@ -98,20 +101,95 @@ describe("gluttonFitness", () => {
   });
 });
 
+describe("survivor and hunter fitness", () => {
+  const died = (player: string, cause: string, tick: number, by?: string) => ({ kind: "died", player, cause, tick, ...(by && { by }) }) as never;
+  const match = (overrides: Partial<MatchResult>): MatchResult => ({
+    result: { reason: "last-standing", winnerId: "seat0" },
+    ticks: 300,
+    players: [player("seat0", 120), player("seat1", 40), player("seat2", 10)],
+    events: [],
+    ...overrides
+  });
+
+  it("counts a kill from died.by, and a mutual head-on for neither", () => {
+    const events = [
+      died("seat1", "body", 50, "seat0"),
+      died("seat2", "self", 60),
+      died("seat0", "head-on", 70, "seat3"),
+      died("seat3", "head-on", 70, "seat0")
+    ];
+    const m = match({ events });
+    assert.equal(kills(m, 0), 1);
+    assert.equal(kills(m, 3), 0);
+    assert.equal(kills(m, 1), 0);
+    assert.equal(kills(match({ events: [died("seat1", "head-on", 5, "seat0"), died("seat0", "head-on", 5, "seat1")] }), 0), 0);
+  });
+
+  it("survivor: ticks alive plus a win bonus, averaged over the matches", () => {
+    const weights = { aliveWeight: 2, survivorWinBonus: 50 };
+    const won = match({});
+    const lost = match({ result: { reason: "last-standing", winnerId: "seat1" }, events: [died("seat0", "wall", 80)] });
+    assert.equal(survivorFitness([{ match: won, seat: 0 }, { match: lost, seat: 0 }], weights), ((2 * 300 + 50) + (2 * 80)) / 2);
+  });
+
+  it("hunter: kills times a bonus, a win bonus and a food bonus, averaged over the matches", () => {
+    const weights = { killBonus: 100, hunterWinBonus: 30, foodBonus: 0.5 };
+    const first = match({ events: [died("seat1", "body", 50, "seat0"), died("seat2", "body", 90, "seat0")] });
+    const second = match({ result: { reason: "last-standing", winnerId: "seat1" }, events: [died("seat0", "head-on", 9, "seat1"), died("seat1", "head-on", 9, "seat0")] });
+    assert.equal(hunterFitness([{ match: first, seat: 0 }, { match: second, seat: 0 }], weights),
+      ((100 * 2 + 30 + 0.5 * 120) + (0 + 0 + 0.5 * 120)) / 2);
+  });
+});
+
 describe("fixtures", () => {
-  it("draws both modes and delays 0 to 4 from the seed, and seats only against the rookie", () => {
-    const drawn = fixtures(mulberry32(6), "rookie", 200);
+  const league = { matches: 400, population: 8, fourPlayerShare: 0.2 };
+
+  it("draws both modes and each seat's delay 0 to 4 from the seed, and seats only where there are opponents", () => {
+    const drawn = fixtures(mulberry32(6), "rookie", { ...league, matches: 200 });
     assert.deepEqual(new Set(drawn.map((f) => f.mode)), new Set(["timed", "endless"]));
-    assert.deepEqual([...new Set(drawn.map((f) => f.delay))].sort(), [0, 1, 2, 3, 4]);
+    assert.deepEqual([...new Set(drawn.flatMap((f) => f.delays))].sort(), [0, 1, 2, 3, 4]);
+    assert.ok(drawn.some((f) => f.delays[0] !== f.delays[1]), "seats draw their delays separately");
     assert.deepEqual(new Set(drawn.map((f) => f.seat)), new Set([0, 1]));
-    assert.ok(fixtures(mulberry32(6), "alone", 50).every((f) => f.seat === 0));
-    assert.deepEqual(fixtures(mulberry32(6), "rookie", 200), drawn);
+    assert.ok(drawn.every((f) => f.opponents.length === 1 && "roster" in f.opponents[0] && f.opponents[0].roster === "rookie"));
+    const alone = fixtures(mulberry32(6), "alone", { ...league, matches: 50 });
+    assert.ok(alone.every((f) => f.seat === 0 && f.opponents.length === 0 && f.delays.length === 1));
+    assert.deepEqual(fixtures(mulberry32(6), "rookie", { ...league, matches: 200 }), drawn);
+  });
+
+  it("in the league, draws opponents only from the population and the roster, and the share of four-player matches", () => {
+    const rosterIds = ["rookie", "dummy"];
+    const drawn = fixtures(mulberry32(7), "league", league, rosterIds);
+    const opponents = drawn.flatMap((f) => f.opponents);
+    for (const o of opponents) {
+      if ("roster" in o) assert.ok(rosterIds.includes(o.roster));
+      else assert.ok(Number.isInteger(o.population) && o.population >= 0 && o.population < league.population);
+    }
+    assert.ok(opponents.some((o) => "roster" in o) && opponents.some((o) => "population" in o));
+    const four = drawn.filter((f) => f.opponents.length === 3);
+    assert.ok(drawn.every((f) => f.opponents.length === 1 || f.opponents.length === 3));
+    assert.ok(Math.abs(four.length / drawn.length - 0.2) < 0.06, `${four.length} of ${drawn.length} four-player`);
+    drawn.forEach((f) => {
+      assert.equal(f.delays.length, f.opponents.length + 1);
+      assert.ok(f.seat >= 0 && f.seat <= f.opponents.length);
+    });
+    assert.deepEqual(new Set(four.map((f) => f.seat)), new Set([0, 1, 2, 3]));
+    assert.deepEqual(fixtures(mulberry32(7), "league", league, rosterIds), drawn);
+  });
+
+  it("runs a league generation", async () => {
+    const seen: unknown[] = [];
+    const s = settings({ generations: 1, aloneGenerations: 0, rookieGenerations: 0, population: 4, matches: 3, hidden: [4] });
+    const { log } = await train(s, { onGeneration: (line) => seen.push(line.stage) });
+    assert.deepEqual(seen, ["league"]);
+    assert.equal(log.length, 1);
   });
 });
 
 describe("checkSettings", () => {
   it("refuses personalities it has no fitness for, and settings that can't be trained", () => {
-    assert.throws(() => checkSettings(settings({ personality: "hunter" })), /only glutton can be trained/);
+    assert.throws(() => checkSettings(settings({ personality: "banana" as never })), /personality must be glutton, survivor, hunter/);
+    assert.throws(() => checkSettings(settings({ fourPlayerShare: 2 })), /fourPlayerShare/);
+    for (const personality of ["glutton", "survivor", "hunter"] as const) assert.doesNotThrow(() => checkSettings(settings({ personality })));
     assert.throws(() => checkSettings(settings({ elites: 50 })), /elites/);
     assert.throws(() => checkSettings(settings({ aloneGenerations: 60 })), /aloneGenerations/);
     assert.doesNotThrow(() => checkSettings(settings()));
@@ -133,20 +211,33 @@ describe("train", () => {
     const { log, best, population } = await train(short, { onGeneration: (line) => lines.push(line) });
     assert.deepEqual(lines, log);
     assert.deepEqual(log.map((l) => [l.generation, l.stage]), [[0, "alone"], [1, "rookie"], [2, "rookie"]]);
+    const staged = await train({ ...short, generations: 4, aloneGenerations: 1, rookieGenerations: 1 });
+    assert.deepEqual(staged.log.map((l) => l.stage), ["alone", "rookie", "league", "league"]);
     log.forEach((l) => assert.ok(l.best >= l.mean));
     assert.equal(population.length, short.population);
     assert.deepEqual(brainProblems(best), []);
   });
 
-  it("learns against the rookie: the best fitness goes up from the first generation to the last", async () => {
+  it("learns against the rookie: the mean fitness goes up from the first generation to the last", async () => {
     const { log } = await train(settings({ seed: 5, generations: 5, aloneGenerations: 0, population: 10, matches: 3 }));
-    assert.ok(log.at(-1)!.best > log[0].best, JSON.stringify(log));
+    assert.ok(log.at(-1)!.mean > log[0].mean, JSON.stringify(log));
+  });
+
+  it("trains survivors and hunters, through all three stages", async () => {
+    for (const personality of ["survivor", "hunter"] as const) {
+      const { log, best } = await train({ ...short, personality, generations: 3, aloneGenerations: 1, rookieGenerations: 1 });
+      assert.deepEqual(log.map((l) => l.stage), ["alone", "rookie", "league"]);
+      log.forEach((l) => assert.ok(Number.isFinite(l.best) && l.best >= l.mean));
+      assert.deepEqual(brainProblems(best), []);
+    }
   });
 
   it("gives the same result on 1 worker and on several", async () => {
     const one = await train(short, { workers: 1 });
     assert.deepEqual(await train(short, { workers: 3 }), one);
     assert.deepEqual(await train(short, { workers: 8 }), one);
+    const league = { ...short, personality: "hunter" as const, generations: 3, aloneGenerations: 0, rookieGenerations: 1, fourPlayerShare: 0.5 };
+    assert.deepEqual(await train(league, { workers: 3 }), await train(league, { workers: 1 }));
   });
 
   it("carries on from a checkpoint exactly as if it had never stopped", async () => {
@@ -163,9 +254,9 @@ describe("train", () => {
 
   it("fails the generation loudly when a worker throws, rather than scoring it zero", async () => {
     const broken = { ...randomBrain(mulberry32(1), [4], "tanh", 0.5), encoderVersion: 99 } as unknown as Brain;
-    await assert.rejects(train({ ...short, population: 4 }, { workers: 2, from: { generation: 1, population: [...brains(3), broken] } }),
+    await assert.rejects(train({ ...short, population: 4 }, { workers: 2, from: { generation: 1, stage: "rookie", population: [...brains(3), broken] } }),
       /snake 3 couldn't be played/);
-    await assert.rejects(train({ ...short, population: 4 }, { workers: 1, from: { generation: 1, population: [...brains(3), broken] } }));
+    await assert.rejects(train({ ...short, population: 4 }, { workers: 1, from: { generation: 1, stage: "rookie", population: [...brains(3), broken] } }));
   });
 });
 
@@ -190,11 +281,23 @@ describe("the train command", () => {
     assert.match(played.stdout, /best\.json/);
   });
 
-  it("refuses a personality it can't train yet, writing nothing", () => {
+  it("trains a survivor and a hunter, through all three stages", () => {
+    for (const personality of ["survivor", "hunter"]) {
+      const run = join(mkdtempSync(join(tmpdir(), "train-")), "run");
+      const trained = cli("train", "--personality", personality, "--run", run, "--generations", "3", "--alone", "1", "--rookie", "1",
+        "--population", "4", "--matches", "2", "--hidden", "4", "--four-player", "0.5");
+      assert.equal(trained.status, 0, trained.stderr);
+      const log = readFileSync(join(run, "log.jsonl"), "utf8").trim().split("\n");
+      assert.deepEqual(log.map((line) => JSON.parse(line).stage), ["alone", "rookie", "league"]);
+      assert.equal(JSON.parse(readFileSync(join(run, "checkpoint.json"), "utf8")).stage, "league");
+    }
+  });
+
+  it("refuses a personality it doesn't know, writing nothing", () => {
     const run = join(mkdtempSync(join(tmpdir(), "train-")), "run");
-    const refused = cli("train", "--personality", "hunter", "--run", run);
+    const refused = cli("train", "--personality", "banana", "--run", run);
     assert.equal(refused.status, 1);
-    assert.match(refused.stderr, /only glutton can be trained for now, not hunter/);
+    assert.match(refused.stderr, /personality must be glutton, survivor, hunter, not banana/);
     assert.equal(existsSync(run), false);
   });
 });

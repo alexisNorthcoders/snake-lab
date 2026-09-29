@@ -1,7 +1,7 @@
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { Brain } from "snake-colyseus/bots";
-import { Checkpoint, GenerationLog, TrainResult, TrainSettings, checkSettings, train } from "./train.ts";
+import { Checkpoint, DEFAULT_SETTINGS, GenerationLog, TrainResult, TrainSettings, checkSettings, stageOf, train } from "./train.ts";
 
 /**
  * A run folder:
@@ -58,6 +58,8 @@ function readCheckpoint(path: string, settings: TrainSettings): Checkpoint {
     throw new Error(`${path} isn't whole JSON (${(error as Error).message}): the run can't be resumed from it`);
   }
   const { generation, population } = checkpoint ?? ({} as Partial<Checkpoint>);
+  // A checkpoint from before the league has no stage: it's the one its generation is in.
+  if (checkpoint && Number.isInteger(generation) && checkpoint.stage === undefined) checkpoint.stage = stageOf(generation, settings);
   if (!Number.isInteger(generation) || generation < 0 || !Array.isArray(population) || population.length !== settings.population ||
     population.some((brain) => !brain || typeof brain !== "object" || !Array.isArray((brain as { layers?: unknown }).layers))) {
     throw new Error(`${path} is malformed: it needs a generation and ${settings.population} brains`);
@@ -69,7 +71,9 @@ function readCheckpoint(path: string, settings: TrainSettings): Checkpoint {
 export function openRun(run: string): { settings: TrainSettings; from?: Checkpoint; log: GenerationLog[] } {
   const files = runFiles(run);
   if (!existsSync(files.settings)) throw new Error(`${run} isn't a run folder: it has no settings.json`);
-  const settings: TrainSettings = JSON.parse(readFileSync(files.settings, "utf8"));
+  const saved = JSON.parse(readFileSync(files.settings, "utf8"));
+  // A run from before the league stays in the rookie stage to its end, and gets the defaults of the settings it lacks.
+  const settings: TrainSettings = { ...DEFAULT_SETTINGS, rookieGenerations: saved.generations - saved.aloneGenerations, ...saved };
   const from: Checkpoint | undefined = existsSync(files.checkpoint) ? readCheckpoint(files.checkpoint, settings) : undefined;
   const played = from?.generation ?? 0;
   const lines = (existsSync(files.log) ? readFileSync(files.log, "utf8") : "").split("\n");

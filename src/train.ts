@@ -8,17 +8,18 @@ import {
   ENCODER_VERSION,
   Personality,
   brainDecider,
-  pickBot
+  pickBot,
+  roster
 } from "snake-colyseus/bots";
 import { MatchOptions, MatchResult, playMatch } from "./match.ts";
 import { DELAYS, MODES } from "./gauntlet.ts";
 import { Pool } from "./pool.ts";
 
 /** The personalities the trainer has a fitness for. */
-export const TRAINABLE: readonly Personality[] = ["glutton"];
+export const TRAINABLE: readonly Personality[] = ["glutton", "survivor", "hunter"];
 
-/** Alone on the board, then 1v1 against the rookie. */
-export type Stage = "alone" | "rookie";
+/** Alone on the board, then 1v1 against the rookie, then the league: varied opponents, some matches four-player. */
+export type Stage = "alone" | "rookie" | "league";
 
 /** Everything that decides a run: the same settings always train the same brains. */
 export interface TrainSettings {
@@ -27,8 +28,12 @@ export interface TrainSettings {
   seed: number;
   /** How many generations in all. */
   generations: number;
-  /** How many of them, from the first, are played alone; the rest are against the rookie. */
+  /** How many of them, from the first, are played alone. */
   aloneGenerations: number;
+  /** How many come after those, against the rookie; the rest, to the end, are the league. */
+  rookieGenerations: number;
+  /** In the league, the share of matches that are four-player, in [0, 1]; the rest are 1v1. */
+  fourPlayerShare: number;
   /** Snakes in each generation. */
   population: number;
   /** The best few, copied into the next generation unchanged. */
@@ -50,11 +55,20 @@ export interface TrainSettings {
   /** Glutton fitness: `foodWeight` × score + `tickBonus` × ticks survived, averaged over its matches. */
   foodWeight: number;
   tickBonus: number;
+  /** Survivor fitness: `aliveWeight` × ticks alive + `survivorWinBonus` if it won, averaged over its matches. */
+  aliveWeight: number;
+  survivorWinBonus: number;
+  /** Hunter fitness: `killBonus` × kills + `hunterWinBonus` if it won + `foodBonus` × food score, averaged over its matches. */
+  killBonus: number;
+  hunterWinBonus: number;
+  foodBonus: number;
 }
 
 export const DEFAULT_SETTINGS: Omit<TrainSettings, "personality" | "seed"> = {
   generations: 50,
   aloneGenerations: 10,
+  rookieGenerations: 20,
+  fourPlayerShare: 0.2,
   population: 50,
   elites: 2,
   tournament: 3,
@@ -66,7 +80,12 @@ export const DEFAULT_SETTINGS: Omit<TrainSettings, "personality" | "seed"> = {
   matches: 10,
   fps: 8,
   foodWeight: 1,
-  tickBonus: 0.1
+  tickBonus: 0.1,
+  aliveWeight: 1,
+  survivorWinBonus: 200,
+  killBonus: 100,
+  hunterWinBonus: 50,
+  foodBonus: 0.1
 };
 
 /** One generation's line in the log. */
@@ -85,19 +104,27 @@ export interface TrainResult {
   population: Brain[];
 }
 
-/** One match every snake in a generation plays: the snake takes seat `seat`, and the rookie the other if there is one. */
+/** An opponent: a roster snake by id, or a snake of the generation being played by its place in the population. */
+export type Opponent = { roster: string } | { population: number };
+
+/**
+ * One match every snake in a generation plays: the snake takes seat `seat`, the
+ * `opponents` the other seats in order, and `delays` (one a seat, in seat order)
+ * are their reaction delays.
+ */
 export interface Fixture {
   seed: number;
   mode: GameMode;
-  delay: number;
   seat: number;
+  delays: number[];
+  opponents: Opponent[];
 }
 
 /** Throws, saying why, if `settings` can't be trained. */
 export function checkSettings(settings: TrainSettings) {
   const { personality, seed, generations, aloneGenerations, population, elites, tournament } = settings;
   if (!TRAINABLE.includes(personality)) {
-    throw new Error(`only ${TRAINABLE.join(", ")} can be trained for now, not ${personality}`);
+    throw new Error(`personality must be ${TRAINABLE.join(", ")}, not ${personality}`);
   }
   const whole = (name: string, value: number, min: number) => {
     if (!Number.isInteger(value) || value < min) throw new Error(`${name} must be a whole number of at least ${min}, not ${value}`);
@@ -105,6 +132,7 @@ export function checkSettings(settings: TrainSettings) {
   if (!Number.isInteger(seed) || seed < 0 || seed >= 2 ** 32) throw new Error(`seed must be a whole number in [0, 2^32), not ${seed}`);
   whole("generations", generations, 1);
   whole("aloneGenerations", aloneGenerations, 0);
+  whole("rookieGenerations", settings.rookieGenerations, 0);
   if (aloneGenerations > generations) throw new Error(`aloneGenerations (${aloneGenerations}) can't be more than generations (${generations})`);
   whole("population", population, 2);
   whole("elites", elites, 0);
@@ -114,7 +142,9 @@ export function checkSettings(settings: TrainSettings) {
   settings.hidden.forEach((size) => whole("each hidden size", size, 1));
   if (!["tanh", "relu", "sigmoid"].includes(settings.activation)) throw new Error(`activation must be tanh, relu or sigmoid, not ${settings.activation}`);
   if (!(settings.mutationRate >= 0 && settings.mutationRate <= 1)) throw new Error(`mutationRate must be in [0, 1], not ${settings.mutationRate}`);
-  for (const name of ["mutationSize", "initialSize", "fps", "foodWeight", "tickBonus"] as const) {
+  if (!(settings.fourPlayerShare >= 0 && settings.fourPlayerShare <= 1)) throw new Error(`fourPlayerShare must be in [0, 1], not ${settings.fourPlayerShare}`);
+  const weights = ["foodWeight", "tickBonus", "aliveWeight", "survivorWinBonus", "killBonus", "hunterWinBonus", "foodBonus"] as const;
+  for (const name of ["mutationSize", "initialSize", "fps", ...weights] as const) {
     if (!Number.isFinite(settings[name]) || settings[name] < 0) throw new Error(`${name} must be a number of at least 0, not ${settings[name]}`);
   }
   if (settings.fps <= 0) throw new Error(`fps must be above 0, not ${settings.fps}`);
@@ -199,14 +229,29 @@ export function breed(population: Brain[], fitness: number[], rng: Rng, settings
   return next;
 }
 
-/** The generation's matches: seeds, modes, delays (0 to 4) and, against the rookie, seats, all drawn from `rng`. */
-export const fixtures = (rng: Rng, stage: Stage, count: number): Fixture[] =>
-  Array.from({ length: count }, () => ({
-    seed: Math.floor(rng() * 2 ** 32),
-    mode: pick(rng, MODES),
-    delay: pick(rng, DELAYS),
-    seat: stage === "rookie" ? Math.floor(rng() * 2) : 0
-  }));
+/**
+ * The generation's matches, all drawn from `rng`: seed, mode, then the
+ * opponents (none alone, the rookie in its stage, in the league one, or three
+ * in `fourPlayerShare` of the matches, each from the population or the roster
+ * at even odds), the snake's seat, and each seat's delay (0 to 4).
+ */
+export const fixtures = (
+  rng: Rng,
+  stage: Stage,
+  settings: Pick<TrainSettings, "matches" | "population" | "fourPlayerShare">,
+  rosterIds: readonly string[] = roster.map((entry) => entry.id)
+): Fixture[] =>
+  Array.from({ length: settings.matches }, () => {
+    const seed = Math.floor(rng() * 2 ** 32);
+    const mode = pick(rng, MODES);
+    const count = stage === "alone" ? 0 : stage === "rookie" ? 1 : rng() < settings.fourPlayerShare ? 3 : 1;
+    const opponents: Opponent[] = Array.from({ length: count }, () =>
+      stage === "rookie" ? { roster: "rookie" }
+        : rng() < 0.5 ? { population: Math.floor(rng() * settings.population) } : { roster: pick(rng, rosterIds) });
+    const seat = Math.floor(rng() * (count + 1));
+    const delays = Array.from({ length: count + 1 }, () => pick(rng, DELAYS));
+    return { seed, mode, seat, delays, opponents };
+  });
 
 /** How many ticks the snake in `seat` lived: to the tick it died on, or the whole match. Needs the match's events. */
 export const ticksSurvived = (match: MatchResult, seat: number) => {
@@ -222,24 +267,58 @@ export function gluttonFitness(matches: { match: MatchResult; seat: number }[], 
   return total / matches.length;
 }
 
-/** The stage generation `g` is played in. */
-export const stageOf = (g: number, settings: Pick<TrainSettings, "aloneGenerations">): Stage =>
-  g < settings.aloneGenerations ? "alone" : "rookie";
+/** Whether the snake in `seat` won the match. */
+const won = (match: MatchResult, seat: number) => match.result.winnerId === `seat${seat}`;
 
-/** A snake's fitness over the generation's fixtures. */
-export function evaluate(brain: Brain, fixtures: Fixture[], stage: Stage, settings: TrainSettings) {
+/**
+ * Kills by the snake in `seat`: `died` events whose `by` is it. A head-on
+ * collision names each snake the other as `by`, but both die, so it counts for neither.
+ */
+export const kills = (match: MatchResult, seat: number) => {
+  if (!match.events) throw new Error("kills need the match's events: play it with keepEvents");
+  return match.events.filter((e) => e.kind === "died" && e.by === `seat${seat}` && e.cause !== "head-on").length;
+};
+
+type Played = { match: MatchResult; seat: number }[];
+
+const average = (matches: Played, score: (match: MatchResult, seat: number) => number) =>
+  matches.reduce((sum, { match, seat }) => sum + score(match, seat), 0) / matches.length;
+
+/** Survivor fitness: `aliveWeight` × ticks alive plus `survivorWinBonus` for a win, averaged over the snake's matches. */
+export const survivorFitness = (matches: Played, weights: Pick<TrainSettings, "aliveWeight" | "survivorWinBonus">) =>
+  average(matches, (match, seat) => weights.aliveWeight * ticksSurvived(match, seat) + (won(match, seat) ? weights.survivorWinBonus : 0));
+
+/** Hunter fitness: `killBonus` × kills plus `hunterWinBonus` for a win plus `foodBonus` × food score, averaged over the snake's matches. */
+export const hunterFitness = (matches: Played, weights: Pick<TrainSettings, "killBonus" | "hunterWinBonus" | "foodBonus">) =>
+  average(matches, (match, seat) => weights.killBonus * kills(match, seat) + (won(match, seat) ? weights.hunterWinBonus : 0) +
+    weights.foodBonus * match.players[seat].score);
+
+/** The stage generation `g` is played in. */
+export const stageOf = (g: number, settings: Pick<TrainSettings, "aloneGenerations" | "rookieGenerations">): Stage =>
+  g < settings.aloneGenerations ? "alone" : g < settings.aloneGenerations + settings.rookieGenerations ? "rookie" : "league";
+
+/** A snake's fitness over the generation's fixtures; `population` is what the fixtures' population opponents are picked from. */
+export function evaluate(brain: Brain, fixtures: Fixture[], population: Brain[], settings: TrainSettings) {
   const snake = { name: "Candidate", decider: brainDecider(brain) };
-  const rookie = pickBot("rookie");
-  return gluttonFitness(fixtures.map(({ seed, mode, delay, seat }) => {
-    const players = stage === "alone" ? [snake] : seat === 0 ? [snake, rookie] : [rookie, snake];
-    const options: MatchOptions = { seed, mode, fps: settings.fps, seats: players.map((player) => ({ player, delay })) };
+  const played = fixtures.map(({ seed, mode, seat, delays, opponents }) => {
+    const others = opponents.map((opponent) =>
+      "roster" in opponent ? pickBot(opponent.roster) : { name: `Opponent ${opponent.population}`, decider: brainDecider(population[opponent.population]) });
+    const players = [...others.slice(0, seat), snake, ...others.slice(seat)];
+    const options: MatchOptions = { seed, mode, fps: settings.fps, seats: players.map((player, i) => ({ player, delay: delays[i] })) };
     return { match: playMatch(options), seat };
-  }), settings);
+  });
+  switch (settings.personality) {
+    case "survivor": return survivorFitness(played, settings);
+    case "hunter": return hunterFitness(played, settings);
+    default: return gluttonFitness(played, settings);
+  }
 }
 
 /** Where a run carries on from: the generation to play next, and its snakes. */
 export interface Checkpoint {
   generation: number;
+  /** The stage that generation is played in. */
+  stage: Stage;
   population: Brain[];
 }
 
@@ -259,21 +338,24 @@ export interface TrainOptions {
  *
  * Each generation `g` draws everything random from `generationRng(seed, g)`:
  * the first generation's brains (`initialSize`), then the generation's
- * `matches` fixtures (seed, mode, delay 0 to 4, and seat), which every snake
+ * `matches` fixtures (seed, mode, opponents, seat and each seat's delay 0 to
+ * 4), which every snake
  * plays so their fitness can be compared, then the next generation. That keeps
  * the `elites` fittest unchanged and fills the rest with children: two parents
  * each the fittest of `tournament` drawn at random, crossed unit by unit, then
  * each weight and bias nudged at chance `mutationRate` by a normal of standard
  * deviation `mutationSize`. The first `aloneGenerations` play alone on the
- * board; the rest play 1v1 against the rookie at the same delay.
+ * board, the next `rookieGenerations` 1v1 against the rookie, and the rest, the
+ * league, against opponents drawn from the generation's population and the
+ * roster, `fourPlayerShare` of the matches with three of them.
  *
  * The next generation is bred after the last one too, so a finished run's
  * checkpoint can carry on to more generations.
  *
  * Defaults (`DEFAULT_SETTINGS`): 50 generations, 10 of them alone; 50 snakes,
  * 2 elites, tournaments of 3, mutation rate 0.1 and size 0.2, initial size 0.5;
- * one hidden layer of 16, tanh; 10 matches a generation at 8 fps; fitness
- * weights 1 for food and 0.1 a tick survived.
+ * one hidden layer of 16, tanh; 10 matches a generation at 8 fps; the
+ * personality's fitness weights.
  *
  * Nothing reads the clock or `Math.random`: the same settings give the same log
  * and brains, however many workers play them and wherever the run was stopped
@@ -284,6 +366,9 @@ export async function train(settings: TrainSettings, options: TrainOptions = {})
   const { workers = 1, from, onGeneration, stop } = options;
   if (from && !(Number.isInteger(from.generation) && from.generation >= 0 && from.generation < settings.generations)) {
     throw new Error(`can't carry on from generation ${from.generation} of ${settings.generations}`);
+  }
+  if (from && from.stage !== stageOf(from.generation, settings)) {
+    throw new Error(`the checkpoint says generation ${from.generation} is in the ${from.stage} stage, but the settings put it in the ${stageOf(from.generation, settings)} stage`);
   }
   const pool = workers > 1 ? new Pool(workers) : undefined;
   try {
@@ -297,13 +382,13 @@ export async function train(settings: TrainSettings, options: TrainOptions = {})
           randomBrain(rng, settings.hidden, settings.activation, settings.initialSize));
       }
       const stage = stageOf(g, settings);
-      const matches = fixtures(rng, stage, settings.matches);
-      const fitness = pool ? await pool.fitness(population, matches, stage, settings) : await fitnessHere(population, matches, stage, settings);
+      const matches = fixtures(rng, stage, settings);
+      const fitness = pool ? await pool.fitness(population, matches, settings) : await fitnessHere(population, matches, settings);
       const line = { generation: g, stage, best: Math.max(...fitness), mean: fitness.reduce((a, b) => a + b, 0) / fitness.length };
       played = { best: population[ranked(fitness)[0]], population };
       population = breed(population, fitness, rng, settings);
       log.push(line);
-      onGeneration?.(line, played.best, { generation: g + 1, population });
+      onGeneration?.(line, played.best, { generation: g + 1, stage: stageOf(g + 1, settings), population });
       if (stop?.()) break;
     }
     return { log, best: played!.best, population: played!.population };
@@ -313,10 +398,10 @@ export async function train(settings: TrainSettings, options: TrainOptions = {})
 }
 
 /** Every snake's fitness, played on this thread, letting signals in between snakes. */
-async function fitnessHere(population: Brain[], matches: Fixture[], stage: Stage, settings: TrainSettings) {
+async function fitnessHere(population: Brain[], matches: Fixture[], settings: TrainSettings) {
   const fitness: number[] = [];
   for (const brain of population) {
-    fitness.push(evaluate(brain, matches, stage, settings));
+    fitness.push(evaluate(brain, matches, population, settings));
     await new Promise((resolve) => setImmediate(resolve));
   }
   return fitness;
