@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). No PPO yet.
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO is coming: the match can be stepped and the engine runs as an `env` subprocess for it (#22); no trainer yet.
 
 ## Stack and layout
 
@@ -14,8 +14,15 @@ TypeScript on Node (>= 20.9), run with `tsx`; no build step. Tests use `node:tes
 with `node:util`'s `parseArgs`. Keep dependencies few.
 
 - `src/match.ts`: `playMatch`, one round between 1 to 4 bots from a seed. Everything the rest of
-  the lab plays through. Its loop follows `SnakeRoom`'s order exactly (record every bot's
-  snapshots, steer every live bot, run the engine's tick), so change it only when the room changes.
+  the lab plays through. It's built on `SteppedMatch`, a match you step one tick at a time: `step(action)`
+  gives the learner's seat its move (0 left, 1 straight, 2 right of the way it last moved; every other seat
+  plays its own decider) and returns `StepFacts` (score gained, food eaten, alive, death cause and `by`,
+  kills by the lab's rule, and on the last tick the outcome and why the round ended: facts, never rewards),
+  and `observe()` gives the learner's delayed view through encoder v1 or v2. Without a learner it is
+  `playMatch`. Its tick follows `SnakeRoom`'s order exactly (record every bot's snapshots, steer every live
+  bot, run the engine's tick; the snapshots are recorded right after the previous tick so `observe` can
+  read them), so change it only when the room changes.
+- `src/env.ts`: the engine as an environment. `Env` (many `SteppedMatch`es, one batch of actions in and observations and facts out; a match that ends restarts on a seed drawn from the batch's), the wire codec (`encodeFrame`, `FrameReader`) and `EnvSession`. `src/cli/env.ts` runs it over stdin and stdout; the protocol (frames, messages, byte layout, facts) is in `docs/env-protocol.md`, which the Python trainer reads. Rewards are never computed here.
 - `src/gauntlet.ts`: the gauntlet. `loadCandidate` (roster id or brain file), `opponentsFor`,
   `runGauntlet` (the grid of opponent × delay 0-4 × mode, N seeds each played in both seats) and
   `verdict` (the bar: at least 60% of matches won against the rookie at delay 2, both modes; draws
@@ -32,6 +39,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `network.ts` (`networkLayout`: a brain's columns, labels and edges), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
 - `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
+- `docs/env-protocol.md`: the `env` subprocess's wire protocol.
 - `test/`: `*.test.ts`, one per module.
 
 ## Commands
@@ -43,6 +51,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   printed. `--players` takes roster ids or brain files. `--events` lists every event; `--json` prints the whole result. `--help` for the rest.
 - `npm run bench -- --matches 500 --players rookie,rookie`: plays seeds one after another and
   prints ticks per second. Run it before and after a change that could slow matches down.
+- `npm run env`: the engine as an environment for another program (see `src/env.ts` and `docs/env-protocol.md`): length-prefixed frames on stdin and stdout, a JSON header and a binary payload of int32 facts and float32 observations for a batch of matches.
 - `npm run gauntlet -- rookie` (or a path to a brain file): plays the candidate against the rookie
   and every other roster snake, prints win, loss and draw rates per opponent, delay and mode, and
   the verdict. Exits 0 on a pass and 1 on a fail. `--seeds` (default 100), `--base-seed` (default 1),
@@ -94,7 +103,7 @@ any hidden sizes. Each `tick` message carries `activations`: `values`, every lay
 `layerValues` for the snake's encoded view when it chose the move that made that tick (the lab copies neither the forward
 pass nor the encoder), and `chosen`, the output (0 left, 1 straight, 2 right) of the move it made. Tick 0 has none. The page
 shades nodes by value, marks the winning output, and redraws the network when the generation's brain changes. It needs
-`snake-colyseus` at `engine-v4.1.0` or later.
+`snake-colyseus` at `engine-v4.1.0` or later (the lab pins `engine-v4.2.0`, which has encoder v2).
 
 Run it on the same box as the run. It listens on `127.0.0.1`, so from your own machine:
 
