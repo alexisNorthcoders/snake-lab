@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO is coming: the match can be stepped and the engine runs as an `env` subprocess for it (#22), and `python/` drives it as a vectorised Gymnasium environment (#23); no trainer yet.
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO: the match can be stepped and the engine runs as an `env` subprocess for it (#22), `python/` drives it as a vectorised Gymnasium environment (#23), and a PPO trainer there learns a Glutton and exports it as a brain (#24).
 
 ## Stack and layout
 
@@ -37,7 +37,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
 - `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `network.ts` (`networkLayout`: a brain's columns, labels and edges), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
-- `python/`: the Python half, its own project (`pyproject.toml`, `snake_lab/`, `tests/`). `snake_lab/env.py`: `SnakeVectorEnv`, a Gymnasium `VectorEnv` that starts `node --import tsx src/cli/env.ts` and drives its matches as a batch (reset with a seed, step with an array of 0/1/2 actions; rewards are 0, the facts are in `infos` by field name, a match that ends is `terminated`, or `truncated` on time-up, and its observation is already the next match's). Engine errors raise `EnvError`, a dead subprocess `EnvProcessError`; `close()` stops the process. `protocol.py` is the wire codec, `bench.py` the throughput benchmark. It reads only `docs/env-protocol.md`.
+- `python/`: the Python half, its own project (`pyproject.toml`, `snake_lab/`, `tests/`). `snake_lab/env.py`: `SnakeVectorEnv`, a Gymnasium `VectorEnv` that starts `node --import tsx src/cli/env.ts` and drives its matches as a batch (reset with a seed, step with an array of 0/1/2 actions; rewards are 0, the facts are in `infos` by field name, a match that ends is `terminated`, or `truncated` on time-up, and its observation is already the next match's). Engine errors raise `EnvError`, a dead subprocess `EnvProcessError`; `close()` stops the process. `protocol.py` is the wire codec, `bench.py` the throughput benchmark. It reads only `docs/env-protocol.md`. `ppo.py` is the PPO (network, `compute_gae`, `ppo_loss`, `collect`, `update`), `rewards.py` the rewards from step facts (`REWARDS`, by personality), `brain.py` `export_brain`, `run.py` the settings, run folder, training loop and `python -m snake_lab.run` CLI. `tests/brain_check.ts` asks the package to validate and run an exported brain.
 - `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `docs/env-protocol.md`: the `env` subprocess's wire protocol.
@@ -93,6 +93,40 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 ```
 
 Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,500 steps a second, a batch of 64 is the pick.
+
+## PPO
+
+`python/snake_lab/run.py` trains a policy with PPO (written out in `ppo.py`, CleanRL style, on PyTorch CPU) through `SnakeVectorEnv`, and writes the same run folder as `train`, so the dashboard's chart, `match`, the `gauntlet` and `promote` read it. From `python/`:
+
+```sh
+.venv/bin/python -m snake_lab.run --personality glutton --run ../runs/ppo-1 --seed 1
+.venv/bin/python -m snake_lab.run --resume ../runs/ppo-1 [--rookie-updates 400]   # carry on; a longer rookie stage trains further
+```
+
+`--help` lists every setting. Only `glutton` exists so far; a personality is a function in `REWARDS` (`rewards.py`) from the step facts to a reward.
+
+**Stages and checkpoints.** Training is a row of checkpoints of `checkpoint_every` updates: `alone_updates`, then `rookie_updates` against the rookie (both modes, delays 0 to 4, the rookie's seat random). A checkpoint is a "generation" in the folder: `settings.json` (`method: "ppo"`, `personality`, `seed`, and `generations`, `aloneGenerations`, `rookieGenerations` counted in checkpoints, plus every PPO setting), `log.jsonl` (`{generation, stage, best, mean}` where `best` and `mean` are the best and mean episode return of the episodes that ended in that checkpoint, then `update`, `steps`, `episodes`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clip_fraction`; if no episode ended, `best` and `mean` repeat the last line's), `generations/gen-NNNN.json` and `best.json` (the policy as a brain: `tanh` hidden layers, a linear output of the three logits, so the brain decider plays its most likely move), and `checkpoint.pt` (weights and optimiser, written last; files are written then renamed). `npm run promote` writes `method: "ppo"` for such a run.
+
+**Seeded and resumable.** At each checkpoint's start the env and the sampling generator are re-seeded from (seed, checkpoint number), and torch runs on `threads` (default 1) thread, so the same seed and settings give the same log on the same machine, and a run resumed from a checkpoint is byte for byte the run that never stopped (a test checks it). Not promised: across machines or torch versions.
+
+**Stopping.** Ctrl-C or SIGTERM lets the current checkpoint (`checkpoint_every` updates) finish and be saved, then exits 0 with `Stopped:`; a second one abandons it. The engine subprocess runs in its own session so a Ctrl-C at the terminal reaches only the trainer.
+
+**In the background** (on the Pi or VPS, never the explorer machine), as for `train`: `nohup .venv/bin/python -m snake_lab.run --run ../runs/ppo-1 --seed 1 > ../runs/ppo-1.out 2>&1 &` from `python/`, stop with `pkill -INT -f "snake_lab.run.*runs/ppo-1"`, resume with `--resume`. Or in tmux; pm2 as for `train` with `--interpreter none` and `.venv/bin/python -m snake_lab.run` (`--kill-timeout` long enough for a checkpoint). About 2,000 steps a second on the Pi at the defaults alone, slower against the rookie (a checkpoint of 5 updates is 10,240 steps).
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `alone_updates`, `rookie_updates` | 40, 160 | PPO updates in each stage; multiples of `checkpoint_every` |
+| `checkpoint_every` | 5 | updates a checkpoint (a log line, a brain, a resume point) |
+| `encoder`, `fps` | 2, 8 | what the policy reads (v1 is 23 inputs, v2 328), ticks a second |
+| `num_envs`, `num_steps` | 16, 128 | matches in the batch, ticks each plays a rollout (an update learns from their product) |
+| `hidden` | 64 64 | the policy's and the value network's hidden layers (`tanh`) |
+| `learning_rate`, `gamma`, `gae_lambda` | 3e-4, 0.99, 0.95 | Adam step, discount, advantage fade |
+| `epochs`, `minibatches` | 4, 4 | passes over a rollout and the minibatches each is cut into |
+| `clip`, `vf_coef`, `ent_coef`, `max_grad_norm` | 0.2, 0.5, 0.01, 0.5 | the surrogate's clip, the value loss's and entropy bonus's weights, gradient clip |
+| `food_weight`, `tick_bonus` | 1, 0.1 | Glutton reward per tick: score gained × `food_weight` + `tick_bonus` while alive |
+| `threads` | 1 | torch's threads |
+
+A match that runs out of time is treated as ended for learning (the env doesn't give back its last observation to bootstrap from).
 
 ## The dashboard
 

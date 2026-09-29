@@ -104,7 +104,8 @@ class SnakeVectorEnv(VectorEnv):
         self._stderr = tempfile.TemporaryFile()
         try:
             self._proc = subprocess.Popen(
-                self._command, cwd=self._cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._stderr
+                self._command, cwd=self._cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._stderr,
+                start_new_session=True,  # its own session: a Ctrl-C at the terminal reaches the trainer, not the engine
             )
         except OSError as error:
             self._stderr.close()
