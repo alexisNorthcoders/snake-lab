@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Brain, brainDecider, brainProblems, loadRoster, roster } from "snake-colyseus/bots";
@@ -46,12 +46,6 @@ export function bumpMinor(version: string): string {
   return `${match[1]}.${Number(match[2]) + 1}.0`;
 }
 
-/** Writes `text` so that `path` is always either its old contents or all of `text`. */
-function writeWhole(path: string, text: string) {
-  writeFileSync(`${path}.tmp`, text);
-  renameSync(`${path}.tmp`, path);
-}
-
 /** The engine tag the lab is installed at, read from the installed package. */
 function engineTag(): string {
   const path = fileURLToPath(new URL("../node_modules/snake-colyseus/package.json", import.meta.url));
@@ -95,14 +89,14 @@ function openTarget(target: string) {
 const commandFor = (o: PromoteOptions) =>
   `npm run promote -- ${o.run} ${o.generation} --name ${JSON.stringify(o.name)} --seeds ${o.seeds} --base-seed ${o.baseSeed} --fps ${o.fps}`;
 
-function describePromotion(o: PromoteOptions, id: string, settings: TrainSettings, table: string, engine: string): string {
+function describePromotion(o: PromoteOptions, id: string, settings: TrainSettings, table: string, engine: string, shipsAs: string): string {
   return [
     `# Add ${o.name} to the roster`,
     "",
     `- **Name:** ${o.name} (\`${id}\`)`,
     `- **Personality:** ${settings.personality}`,
     `- **Generation:** ${o.generation}, of run \`${o.run}\` (neuroevolution, seed ${settings.seed})`,
-    `- **Engine:** played under \`${engine}\``,
+    `- **Engine:** played under \`${engine}\`; this PR bumps the target's \`engineVersion\`, so it will be tagged \`${shipsAs}\``,
     "",
     "## Training settings",
     "",
@@ -169,12 +163,33 @@ export function promote(options: PromoteOptions): PromoteResult {
   if (!result.pass) return { id, report, verdict: result, table };
 
   const entry = { id, name, personality: settings.personality, generation, method: "neuroevolution", brain: `${id}.json` };
-  const description = describePromotion(options, id, settings, table, engineTag());
+  const description = describePromotion(options, id, settings, table, engineTag(), `engine-v${nextVersion}`);
   const descriptionPath = join(run, `promote-${id}.md`);
-  writeWhole(brainPath, `${JSON.stringify(brain, null, 2)}\n`);
-  writeWhole(entryPath, `${JSON.stringify(entry, null, 2)}\n`);
-  writeWhole(descriptionPath, description);
-  writeWhole(checkout.packagePath, bumped);
+  const descriptionExisted = existsSync(descriptionPath);
+  const previousDescription = descriptionExisted ? readFileSync(descriptionPath, "utf8") : "";
+  const outputs: [string, string][] = [
+    [brainPath, `${JSON.stringify(brain, null, 2)}\n`],
+    [entryPath, `${JSON.stringify(entry, null, 2)}\n`],
+    [descriptionPath, description],
+    [checkout.packagePath, bumped]
+  ];
+  // Stage every file first, then rename them into place; a failure at either step undoes what was done.
+  const renamed: string[] = [];
+  try {
+    for (const [path, text] of outputs) writeFileSync(`${path}.tmp`, text);
+    for (const [path] of outputs) {
+      renameSync(`${path}.tmp`, path);
+      renamed.push(path);
+    }
+  } catch (error) {
+    for (const [path] of outputs) rmSync(`${path}.tmp`, { force: true });
+    for (const path of renamed) {
+      if (path === checkout.packagePath) writeFileSync(path, packageText);
+      else if (path === descriptionPath && descriptionExisted) writeFileSync(path, previousDescription);
+      else rmSync(path, { force: true });
+    }
+    throw error;
+  }
   const written = [brainPath, entryPath, checkout.packagePath, descriptionPath].map((p) => resolve(p));
   return { id, report, verdict: result, table, promotion: { description, written } };
 }
