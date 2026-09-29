@@ -92,7 +92,11 @@ npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1]
 Serves a page next to a run: its settings, the latest generation and stage, and a chart of best and
 mean fitness per generation with the stages shaded. A run that's training grows on the chart as each
 generation lands, with no reload; a finished or stopped one shows complete. It only reads the run
-folder. It listens on `127.0.0.1`: from another machine use `ssh -L 8080:127.0.0.1:8080 <box>` and open
+folder. Under the chart, a grid replays a generation's best snake in that generation's own fixtures, and
+beside it the **network** of that snake is drawn: the 23 labelled inputs, the hidden units and left,
+straight and right, edges blue or orange by the sign of their weight and thicker the bigger it is (the
+faintest are left out), nodes shaded by their value. It lights up tick by tick with the followed game
+(the first, or click another) and marks the output that won. It listens on `127.0.0.1`: from another machine use `ssh -L 8080:127.0.0.1:8080 <box>` and open
 `http://localhost:8080`. Never expose it publicly (`--host` is for the Pi's LAN).
 
 ## Other commands

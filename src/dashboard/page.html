@@ -26,7 +26,15 @@
   .game { border: 1px solid var(--grid); border-radius: 6px; padding: .4rem; font-size: .8rem; }
   .game canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; background: var(--grid); border-radius: 3px; }
   .game .meta { color: var(--muted); } .game .result { font-weight: 600; min-height: 1.2em; }
-  svg { cursor: pointer; }
+  #chart { cursor: pointer; }
+  #play { display: flex; gap: 1rem; align-items: flex-start; }
+  #play #games { flex: 1 1 55%; min-width: 0; }
+  #network-box { flex: 1 1 45%; min-width: 0; position: sticky; top: .5rem; border: 1px solid var(--grid); border-radius: 6px; padding: .4rem; }
+  #network-box h3 { margin: 0 0 .2rem; font-size: .95rem; } #network-note { color: var(--muted); font-size: .8rem; }
+  #network { max-height: 80vh; } #network text { font-size: 9px; }
+  #network .out { fill: var(--fg); font-size: 11px; } #network .out.won { font-weight: 700; }
+  .game { cursor: pointer; } .game.followed { border-color: var(--best); box-shadow: 0 0 0 2px var(--best); }
+  @media (max-width: 900px) { #play { flex-direction: column; } #network-box { position: static; width: 100%; } }
 </style>
 </head>
 <body>
@@ -44,7 +52,14 @@
   <label>speed <input id="speed" type="number" min="1" max="60" step="1"> ticks/s</label>
   <span class="legend" id="games-note">click the chart to pin a generation</span>
 </div>
-<div id="games"></div>
+<div id="play">
+  <div id="games"></div>
+  <div id="network-box">
+    <h3>Network</h3>
+    <div id="network-note">the followed game's snake · click a game to follow it</div>
+    <svg id="network" viewBox="0 0 520 420" role="img" aria-label="The followed snake's network, lit by its activations"></svg>
+  </div>
+</div>
 <script>
 "use strict";
 const NS = "http://www.w3.org/2000/svg";
@@ -105,7 +120,69 @@ function drawChart() {
 
 // ---- the grid of sample games: the server plays each match, the page draws its ticks ----
 const COLORS = ["#0b6bcb", "#d1701c", "#3a9d5d", "#b03ab0"], CELL = 10, BOARD = 20;
-let games = [];
+let games = [], followed = null, layout = null;
+
+// ---- the network of the snake in the followed game: drawn once a generation, lit tick by tick ----
+const NW = 520, NH = 420, NM = { l: 92, r: 62, t: 14, b: 14 }, POS = "#0b6bcb", NEG = "#d1701c";
+let nodes = [], outLabels = [];
+
+function drawNetwork(next) {
+  layout = next;
+  const svg = $("network");
+  svg.replaceChildren();
+  nodes = []; outLabels = [];
+  if (!layout) return;
+  const cols = layout.columns, last = cols.length - 1;
+  const cx = (c) => NM.l + (c / last) * (NW - NM.l - NM.r);
+  const cy = (c, i) => NM.t + (cols[c].labels.length === 1 ? (NH - NM.t - NM.b) / 2 : (i / (cols[c].labels.length - 1)) * (NH - NM.t - NM.b));
+  const radius = Math.min(9, Math.max(2.5, (NH - NM.t - NM.b) / Math.max(...cols.map((c) => c.labels.length)) / 2.2));
+  const peak = cols.slice(1).map((_, l) => Math.max(1e-9, ...layout.edges.filter((e) => e.layer === l).map((e) => Math.abs(e.weight))));
+  const edges = el("g", {});
+  for (const e of layout.edges) {
+    const rel = Math.abs(e.weight) / peak[e.layer];
+    if (rel < 0.15) continue; // the faint ones would only clutter
+    edges.appendChild(el("line", { x1: cx(e.layer), y1: cy(e.layer, e.from), x2: cx(e.layer + 1), y2: cy(e.layer + 1, e.to),
+      stroke: e.weight >= 0 ? POS : NEG, "stroke-width": (0.3 + 2.2 * rel).toFixed(2), "stroke-opacity": (0.15 + 0.6 * rel).toFixed(2) }));
+  }
+  svg.appendChild(edges);
+  cols.forEach((col, c) => {
+    nodes.push(col.labels.map((label, i) => {
+      const circle = el("circle", { cx: cx(c), cy: cy(c, i), r: radius, fill: "var(--bg)", stroke: "var(--muted)", "stroke-width": 1 });
+      circle.appendChild(el("title", {}, label));
+      svg.appendChild(circle);
+      if (c === 0) svg.appendChild(el("text", { x: cx(c) - radius - 4, y: cy(c, i) + 3, "text-anchor": "end" }, label));
+      if (c === last) {
+        const t = el("text", { x: cx(c) + radius + 5, y: cy(c, i) + 4, class: "out" }, label);
+        svg.appendChild(t); outLabels.push(t);
+      }
+      return circle;
+    }));
+  });
+  lightNetwork(null);
+}
+
+/** Shades every node by its value (blue positive, orange negative) and rings the output that won. */
+function lightNetwork(act) {
+  nodes.forEach((column, c) => {
+    const values = act ? act.values[c] : null;
+    const scale = c === nodes.length - 1 && values ? Math.max(1, ...values.map(Math.abs)) : 1;
+    column.forEach((circle, i) => {
+      const v = values ? values[i] : 0;
+      circle.setAttribute("fill", values ? (v >= 0 ? POS : NEG) : "var(--bg)");
+      circle.setAttribute("fill-opacity", values ? Math.min(1, Math.abs(v) / scale).toFixed(2) : 1);
+      const won = c === nodes.length - 1 && act && act.chosen === i;
+      circle.setAttribute("stroke", won ? "var(--fg)" : "var(--muted)");
+      circle.setAttribute("stroke-width", won ? 3 : 1);
+      if (c === nodes.length - 1) outLabels[i].classList.toggle("won", !!won);
+    });
+  });
+}
+
+function follow(game) {
+  followed = game;
+  games.forEach((g) => g.box.classList.toggle("followed", g === game));
+  if (game) lightNetwork(game.frames[Math.min(game.at, game.frames.length - 1)]?.activations ?? null);
+}
 
 function drawFrame(game) {
   const ctx = game.canvas.getContext("2d"), frame = game.frames[Math.min(game.at, game.frames.length - 1)];
@@ -120,6 +197,7 @@ function drawFrame(game) {
     ctx.globalAlpha = 1;
   });
   game.tickLabel.textContent = `tick ${frame.tick}`;
+  if (game === followed) lightNetwork(frame.activations ?? null);
 }
 
 const ending = (game) => {
@@ -138,8 +216,10 @@ function addGame(info) {
   meta.appendChild(document.createTextNode(" · ")); meta.appendChild(tickLabel);
   box.append(canvas, meta, result);
   $("games").appendChild(box);
-  const game = { info, canvas, result, tickLabel, frames: [], end: null, at: 0, nextAt: 0, holdUntil: 0 };
+  const game = { info, box, canvas, result, tickLabel, frames: [], end: null, at: 0, nextAt: 0, holdUntil: 0 };
+  box.addEventListener("click", () => follow(game));
   games.push(game);
+  if (!followed) follow(game); // the first by default
   return game;
 }
 
@@ -147,15 +227,17 @@ function loadGames(g) {
   if (source) source.close();
   shown = g;
   games = [];
+  followed = null;
   $("games").replaceChildren();
   $("games-title").textContent = `Sample games · generation ${g}`;
   const es = source = new EventSource(`/games?generation=${g}`);
   let current = null;
+  es.addEventListener("generation", (e) => drawNetwork(JSON.parse(e.data).network));
   es.addEventListener("start", (e) => { current = addGame(JSON.parse(e.data).game); });
-  es.addEventListener("tick", (e) => { if (current) current.frames.push(JSON.parse(e.data).frame); if (current && current.frames.length === 1) drawFrame(current); });
+  es.addEventListener("tick", (e) => { if (current) { const m = JSON.parse(e.data); m.frame.activations = m.activations; current.frames.push(m.frame); } if (current && current.frames.length === 1) drawFrame(current); });
   es.addEventListener("end", (e) => { if (current) { current.end = JSON.parse(e.data); current.result.textContent = ending(current); } });
   es.addEventListener("done", () => es.close());
-  es.onerror = () => { if (es.readyState === EventSource.CLOSED || source !== es) return; es.close(); if (games.length === 0) $("games").textContent = `generation ${g} has no games to show`; };
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED || source !== es) return; es.close(); if (games.length === 0) { $("games").textContent = `generation ${g} has no games to show`; drawNetwork(null); } };
 }
 
 function frameLoop(now) {
