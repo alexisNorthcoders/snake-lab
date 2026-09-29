@@ -5,9 +5,6 @@ description = "The lab's Python half: a vectorised environment over the TypeScri
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26", "gymnasium>=1.0"]
 
-[dependency-groups]
-dev = ["pytest>=8"]
-
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
@@ -15,8 +12,8 @@ dev = ["pytest>=8"]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["snake_lab"]
+[tool.setuptools.packages.find]
+include = ["snake_lab*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

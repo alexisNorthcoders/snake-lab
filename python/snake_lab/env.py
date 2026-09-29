@@ -44,7 +44,9 @@ class SnakeVectorEnv(VectorEnv):
     Actions are 0 left, 1 straight, 2 right. Rewards are always 0: the engine's facts come back in
     `infos`, one int32 array of length `num_envs` a field (see `FACT_FIELDS`). A match that ends is
     flagged in `terminated` (or `truncated` when time ran out) and its facts are those of its last
-    tick, but the observation is already the next match's first.
+    tick, but the observation is already the next match's first. How a match ended is in `infos` too:
+    `outcome` (1 won, 2 lost, 3 drawn) and `reason` (1 last-standing, 2 time-up, 3 learner-died), both 0
+    for a match still going; `ended` is 1 on its last tick.
     """
 
     metadata = {"autoreset_mode": "SameStep"}
@@ -188,7 +190,10 @@ class SnakeVectorEnv(VectorEnv):
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                proc.wait()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
         finally:
             if self._stderr is not None:
                 self._stderr.close()
@@ -204,4 +209,8 @@ def _reap(proc: subprocess.Popen) -> int | None:
     try:
         return proc.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        return None
+        proc.kill()
+        try:
+            return proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            return None
