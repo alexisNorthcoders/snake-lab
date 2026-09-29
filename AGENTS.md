@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8). No PPO yet.
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), and promotes a generation to the roster (#9). No PPO yet.
 
 ## Stack and layout
 
@@ -19,7 +19,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/gauntlet.ts`: the gauntlet. `loadCandidate` (roster id or brain file), `opponentsFor`,
   `runGauntlet` (the grid of opponent × delay 0-4 × mode, N seeds each played in both seats) and
   `verdict` (the bar: at least 60% of matches won against the rookie at delay 2, both modes; draws
-  count as not winning). `promote` will use it.
+  count as not winning). `promote` uses it. `formatReport` prints a report.
 - `src/train.ts`: the neuroevolution trainer. `train` (the whole run, or the rest of one from a
   `Checkpoint`), and its parts: `randomBrain`, `crossover`, `mutate`, `breed`, `fixtures` (a
   generation's matches), `evaluate`, `gluttonFitness`. A genome is a brain in `snake-colyseus/bots`'
@@ -28,7 +28,8 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   snake a job, each fitness put back in the snake's place.
 - `src/run.ts`: the run folder. `createRun`, `trainRun` (from generation 0 or the latest
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
-- `src/cli/`: the `match`, `bench`, `gauntlet` and `train` commands, and the options they share.
+- `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
+- `src/cli/`: the `match`, `bench`, `gauntlet`, `train` and `promote` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `test/`: `*.test.ts`, one per module.
 
@@ -54,6 +55,24 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   `match --players` and the `gauntlet`.
 - `npm run train -- --resume runs/glutton-1`: carries on from the latest checkpoint. Only
   `--generations` (to train further, or finish) and `--workers` may be given.
+
+- `npm run promote -- runs/glutton-1 50 --name "Nimble Pete"`: puts that generation's brain through
+  the gauntlet (`--seeds`, `--base-seed`, `--fps` as there). On a pass it writes `brains/<id>.json`
+  and `entries/<id>.json` under `src/bots/` in the `snake-colyseus` checkout (`--target`, default
+  `../snake-colyseus`), bumps its `engineVersion` by a minor version, prints a PR description and
+  saves it as `promote-<id>.md` in the run folder. On a fail it prints the table and the verdict,
+  exits 1 and writes nothing. It also refuses, writing nothing, when the id (a slug of the name) or
+  the name is in the target's roster, the target isn't a `snake-colyseus` checkout, or the
+  generation's brain is missing or invalid. It never runs git. See "Promoting".
+
+## Promoting
+
+`promote` only writes data, and a person reviews every promotion. After a pass:
+
+1. In the `snake-colyseus` checkout, branch, commit the three changed files (the brain, the entry,
+   `package.json`) and open the PR with the printed description (or `promote-<id>.md`).
+2. Once it's merged and CI has tagged the new `engine-vX.Y.Z`, bump the pin in this repo's
+   `package.json` to it and `npm install`.
 
 ## The trainer's settings
 

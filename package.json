@@ -13,11 +13,12 @@
     "bench": "tsx src/cli/bench.ts",
     "gauntlet": "tsx src/cli/gauntlet.ts",
     "train": "tsx src/cli/train.ts",
+    "promote": "tsx src/cli/promote.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
-    "snake-colyseus": "github:alexisNorthcoders/snake-colyseus#engine-v3.1.0"
+    "snake-colyseus": "github:alexisNorthcoders/snake-colyseus#engine-v4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
