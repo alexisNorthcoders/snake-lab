@@ -99,6 +99,25 @@ faintest are left out), nodes shaded by their value. It lights up tick by tick w
 (the first, or click another) and marks the output that won. It listens on `127.0.0.1`: from another machine use `ssh -L 8080:127.0.0.1:8080 <box>` and open
 `http://localhost:8080`. Never expose it publicly (`--host` is for the Pi's LAN).
 
+## The Python environment
+
+`python/` holds a Gymnasium vector environment over the engine, for the PPO trainer. Set it up (after `npm install`) and test it:
+
+```sh
+cd python
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest
+.venv/bin/python -m snake_lab.bench    # environment steps a second, per batch size
+```
+
+```python
+from snake_lab import SnakeVectorEnv
+env = SnakeVectorEnv(64, encoder=2, opponents=["rookie"], learner_delay=[0, 4])
+obs, infos = env.reset(seed=1)
+obs, reward, terminated, truncated, infos = env.step(actions)  # actions: 0 left, 1 straight, 2 right
+env.close()
+```
+
 ## Other commands
 
 `npm run bench -- --matches 500` plays many matches and prints ticks per second. `npm test` runs

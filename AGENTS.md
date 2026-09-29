@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO is coming: the match can be stepped and the engine runs as an `env` subprocess for it (#22); no trainer yet.
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO is coming: the match can be stepped and the engine runs as an `env` subprocess for it (#22), and `python/` drives it as a vectorised Gymnasium environment (#23); no trainer yet.
 
 ## Stack and layout
 
@@ -37,6 +37,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
 - `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `network.ts` (`networkLayout`: a brain's columns, labels and edges), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
+- `python/`: the Python half, its own project (`pyproject.toml`, `snake_lab/`, `tests/`). `snake_lab/env.py`: `SnakeVectorEnv`, a Gymnasium `VectorEnv` that starts `node --import tsx src/cli/env.ts` and drives its matches as a batch (reset with a seed, step with an array of 0/1/2 actions; rewards are 0, the facts are in `infos` by field name, a match that ends is `terminated`, or `truncated` on time-up, and its observation is already the next match's). Engine errors raise `EnvError`, a dead subprocess `EnvProcessError`; `close()` stops the process. `protocol.py` is the wire codec, `bench.py` the throughput benchmark. It reads only `docs/env-protocol.md`.
 - `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `docs/env-protocol.md`: the `env` subprocess's wire protocol.
@@ -78,6 +79,20 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1] [--speed 8] [--games 6]`: serves a page for one run: its
   settings, the latest generation and stage, whether the log is still being written to, and a chart of best
   and mean fitness per generation with the stages shaded. It grows as the run trains, with no reload (see "The dashboard").
+
+## The Python project
+
+Python >= 3.11 in `python/`, managed with plain `venv` and `pip` (`uv` isn't installed on the Pi). Dependencies: NumPy and
+Gymnasium (PyTorch comes with the trainer). The engine needs `npm install` at the repo root first.
+
+```sh
+cd python
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest                  # about 5 seconds
+.venv/bin/python -m snake_lab.bench         # steps a second for batch sizes 1 to 256 (--help for options)
+```
+
+Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,500 steps a second, a batch of 64 is the pick.
 
 ## The dashboard
 
