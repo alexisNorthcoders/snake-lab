@@ -172,7 +172,9 @@ describe("dashboard", () => {
       assert.equal((await fetch(`${dashboard.url}/games?generation=x`)).status, 404);
       const body = await (await fetch(`${dashboard.url}/games?generation=0`)).text();
       const events = [...body.matchAll(/^event: (.*)\ndata: (.*)$/gm)].map((m) => ({ event: m[1], data: JSON.parse(m[2]) }));
-      assert.deepEqual(events[0], { event: "generation", data: { generation: 0, games: 1 } });
+      assert.deepEqual({ ...events[0].data, network: undefined }, { generation: 0, games: 1, network: undefined });
+      assert.deepEqual(events[0].data.network.columns.map((c: { labels: string[] }) => c.labels.length), [23, ...settings.hidden, 3]);
+      assert.ok(events.filter((e) => e.event === "tick").some((e) => e.data.activations?.values.length === settings.hidden.length + 2));
       assert.equal(events[events.length - 1].event, "done");
       assert.deepEqual(events.filter((e) => e.event === "start").map((e) => e.data.game.index), [0]);
       assert.equal(events.filter((e) => e.event === "end").length, 1);

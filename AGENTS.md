@@ -29,7 +29,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/run.ts`: the run folder. `createRun`, `trainRun` (from generation 0 or the latest
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
-- `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
+- `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `network.ts` (`networkLayout`: a brain's columns, labels and edges), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
 - `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `test/`: `*.test.ts`, one per module.
@@ -86,6 +86,15 @@ fixtures are kept. `GET /games?generation=N` plays them on the server and stream
 ticks a second (default 8, editable on the page), loops it, and labels it with opponent, mode, delays and result. It
 follows the latest generation; click the chart to pin one, "follow the latest" to go back. `--games` (default 6) caps
 the games shown per generation, to keep the replays light next to the trainer's workers.
+
+**The network visualiser.** Beside the grid the page draws the network of the snake in the followed game (the first
+by default; click a game to follow another). The `generation` event carries `networkLayout(brain)`: a column of
+labelled nodes a layer (encoder v1's `INPUT_LABELS`, hidden units numbered, `OUTPUT_LABELS`) and an edge a weight, for
+any hidden sizes. Each `tick` message carries `activations`: `values`, every layer's values from the package's
+`layerValues` for the snake's encoded view when it chose the move that made that tick (the lab copies neither the forward
+pass nor the encoder), and `chosen`, the output (0 left, 1 straight, 2 right) of the move it made. Tick 0 has none. The page
+shades nodes by value, marks the winning output, and redraws the network when the generation's brain changes. It needs
+`snake-colyseus` at `engine-v4.1.0` or later.
 
 Run it on the same box as the run. It listens on `127.0.0.1`, so from your own machine:
 

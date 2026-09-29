@@ -3,6 +3,7 @@ import { createServer, IncomingMessage, Server, ServerResponse } from "node:http
 import { basename, resolve } from "node:path";
 import { runFiles, withDefaults } from "../run.ts";
 import { LogReader } from "./log.ts";
+import { networkLayout } from "./network.ts";
 import { gameStream, readGenerationBest, sampleFixtures } from "./replay.ts";
 
 const page = readFileSync(new URL("./page.html", import.meta.url));
@@ -64,7 +65,7 @@ export async function startDashboard(run: string, options: DashboardOptions = {}
   const timer = setInterval(tick, options.pollMs ?? 500);
   const beat = setInterval(() => { for (const res of clients) send(res, "status", status()); }, 5000);
 
-  /** Generation g's sample games as Server-Sent Events: `generation`, then each game's `start`, `tick`s and `end`, then `done`. */
+  /** Generation g's sample games as Server-Sent Events: `generation` (with the brain's network), then each game's `start`, `tick`s and `end`, then `done`. */
   const games = async (req: IncomingMessage, res: ServerResponse) => {
     const g = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("generation"));
     const brain = Number.isInteger(g) && g >= 0 ? readGenerationBest(run, g) : undefined;
@@ -77,7 +78,7 @@ export async function startDashboard(run: string, options: DashboardOptions = {}
     req.on("close", () => { open = false; });
     const full = withDefaults(settings as never);
     const sample = sampleFixtures(full, g, gameLimit);
-    send(res, "generation", { generation: g, games: sample.length });
+    send(res, "generation", { generation: g, games: sample.length, network: networkLayout(brain) });
     for (const { fixture, index } of sample) {
       for (const message of gameStream(fixture, index, brain, full.fps)) {
         if (!open) return;

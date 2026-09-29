@@ -3,8 +3,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { brainDecider } from "snake-colyseus/bots";
+import { Decider, brainDecider, encode, layerValues } from "snake-colyseus/bots";
 import { gameStream, readGenerationBest, replayable, sampleFixtures } from "../src/dashboard/replay.ts";
+import { networkLayout } from "../src/dashboard/network.ts";
 import { playMatch } from "../src/match.ts";
 import { createRun } from "../src/run.ts";
 import { trainRun } from "../src/run.ts";
@@ -126,5 +127,59 @@ describe("gameStream", () => {
     const { fixture } = sampleFixtures(settings, 2)[0];
     const options = fixtureOptions(fixture, { name: "Candidate", decider: brainDecider(brain) }, [], settings.fps);
     assert.deepEqual(playMatch({ ...options, onTick: () => {} }), playMatch(options));
+  });
+});
+
+describe("gameStream's activations", () => {
+  const brain = randomBrain(generationRng(1, 0), [6, 5], "tanh", 0.8);
+
+  it("sends, for each tick, the package's layer values for the snake's view, and marks the output that won", () => {
+    const { fixture, index } = sampleFixtures(settings, 2)[0];
+    const views: Parameters<Decider>[0][] = [];
+    const decide = brainDecider(brain);
+    const spy: Decider = (view) => { views.push(structuredClone(view)); return decide(view); };
+    const options = fixtureOptions(fixture, { name: "Candidate", decider: spy }, [], settings.fps);
+    // our seat is the only one whose decider is the spy; the others' views aren't recorded
+    const ticks = [...gameStream(fixture, index, brain, settings.fps)].filter((m) => m.kind === "tick") as { frame: { tick: number }; activations?: { values: number[][]; chosen: number } }[];
+    playMatch(options);
+    assert.equal(ticks[0].activations, undefined, "the board as dealt has no decision behind it");
+    const withValues = ticks.filter((t) => t.activations);
+    assert.equal(withValues.length, views.length, "one set of values for each decision the snake made");
+    withValues.forEach((t, i) => {
+      const expected = layerValues(brain, encode(views[i]));
+      assert.deepEqual(t.activations!.values, expected);
+      assert.equal(t.frame.tick, i + 1);
+      const out = expected[expected.length - 1];
+      assert.equal(t.activations!.chosen, out.indexOf(Math.max(...out)));
+    });
+  });
+
+  it("has values for every layer of the brain", () => {
+    const { fixture, index } = sampleFixtures(settings, 0)[0];
+    const tick = [...gameStream(fixture, index, brain, settings.fps)].find((m) => m.kind === "tick" && m.activations);
+    assert.ok(tick && tick.kind === "tick");
+    assert.deepEqual(tick.activations!.values.map((v) => v.length), brain.sizes);
+  });
+});
+
+describe("networkLayout", () => {
+  it("lays a 23 → 16 → 3 brain out in three columns with an edge for every weight", () => {
+    const layout = networkLayout(randomBrain(generationRng(1, 0), [16], "tanh", 0.5));
+    assert.deepEqual(layout.columns.map((c) => c.labels.length), [23, 16, 3]);
+    assert.equal(layout.columns[0].labels[0], "blocked left 1");
+    assert.equal(layout.columns[0].labels[22], "drains left");
+    assert.deepEqual(layout.columns[2].labels, ["left", "straight", "right"]);
+    assert.equal(layout.edges.length, 23 * 16 + 16 * 3);
+    assert.equal(layout.edges.filter((e) => e.layer === 0).length, 23 * 16);
+    assert.ok(layout.edges.every((e) => e.from < layout.columns[e.layer].labels.length && e.to < layout.columns[e.layer + 1].labels.length));
+  });
+
+  it("lays a brain with two hidden layers out in four columns, edges carrying the weights", () => {
+    const brain = randomBrain(generationRng(2, 0), [8, 5], "relu", 0.5);
+    const layout = networkLayout(brain);
+    assert.deepEqual(layout.columns.map((c) => c.labels.length), [23, 8, 5, 3]);
+    assert.equal(layout.edges.length, 23 * 8 + 8 * 5 + 5 * 3);
+    for (const { layer, from, to, weight } of layout.edges) assert.equal(weight, brain.layers[layer].weights[to][from]);
+    assert.deepEqual(new Set(layout.edges.map((e) => e.layer)), new Set([0, 1, 2]));
   });
 });

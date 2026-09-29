@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { Brain, brainDecider } from "snake-colyseus/bots";
-import { GameMode } from "snake-colyseus/engine";
+import { Brain, Decider, brainDecider, encode, layerValues } from "snake-colyseus/bots";
+import { GameMode, directionMap } from "snake-colyseus/engine";
 import { Frame, MatchResult, playMatch } from "../match.ts";
 import { runFiles } from "../run.ts";
 import { Fixture, TrainSettings, drawGeneration, fixtureOptions } from "../train.ts";
@@ -21,20 +21,37 @@ export interface GameInfo {
   names: string[];
 }
 
+/** What the snake's network held when it chose the move that made a tick: every layer's values (the input first), and which output won (0 left, 1 straight, 2 right). */
+export interface Activations {
+  values: number[][];
+  chosen: number;
+}
+
 /** One game as the page gets it: a start, every tick's board (0 is the board as dealt), then the end. */
 export type GameMessage =
   | { kind: "start"; game: GameInfo }
-  | { kind: "tick"; frame: Frame }
+  | { kind: "tick"; frame: Frame; activations?: Activations }
   | { kind: "end"; result: MatchResult["result"]; ticks: number; players: { id: string; name: string; score: number; length: number }[] };
 
 /** Plays `brain` in `fixture` (which mustn't have a population opponent) and yields its tick stream. */
 export function* gameStream(fixture: Fixture, index: number, brain: Brain, fps: number): Generator<GameMessage> {
   const frames: Frame[] = [];
-  const options = fixtureOptions(fixture, { name: "Candidate", decider: brainDecider(brain) }, [], fps);
+  const activations = new Map<number, Activations>();
+  const decide = brainDecider(brain);
+  const decider: Decider = (view) => {
+    const direction = decide(view);
+    const { x, y } = view.self.movedDirection;
+    const [fx, fy] = x === 0 && y === 0 ? [1, 0] : [x, y]; // as the brain's own decider heads
+    const { x: dx, y: dy } = directionMap[direction];
+    // a decision made after `frames.length` boards is for the tick that makes the next one
+    activations.set(frames.length, { values: layerValues(brain, encode(view)), chosen: dx === fx && dy === fy ? 1 : dx === -fy && dy === fx ? 2 : 0 });
+    return direction;
+  };
+  const options = fixtureOptions(fixture, { name: "Candidate", decider }, [], fps);
   const match = playMatch({ ...options, onTick: (frame) => frames.push(frame) });
   const { seed, mode, seat, delays } = fixture;
   yield { kind: "start", game: { index, seed, mode, seat, delays, names: options.seats.map(({ player }) => player.name) } };
-  for (const frame of frames) yield { kind: "tick", frame };
+  for (const frame of frames) yield { kind: "tick", frame, activations: activations.get(frame.tick) };
   yield { kind: "end", result: match.result, ticks: match.ticks, players: match.players.map(({ id, name, score, length }) => ({ id, name, score, length })) };
 }
 
