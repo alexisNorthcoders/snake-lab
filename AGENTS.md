@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO: the match can be stepped and the engine runs as an `env` subprocess for it (#22), `python/` drives it as a vectorised Gymnasium environment (#23), and a PPO trainer there learns a Glutton and exports it as a brain (#24).
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8), promotes a generation to the roster (#9), and trains all three personalities through the league (#10). PPO: the match can be stepped and the engine runs as an `env` subprocess for it (#22), `python/` drives it as a vectorised Gymnasium environment (#23), and a PPO trainer there learns a Glutton and exports it as a brain (#24), and covers Survivor and Hunter too, with a league stage and promoting a PPO snake (#25).
 
 ## Stack and layout
 
@@ -37,8 +37,8 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
 - `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `network.ts` (`networkLayout`: a brain's columns, labels and edges), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
-- `python/`: the Python half, its own project (`pyproject.toml`, `snake_lab/`, `tests/`). `snake_lab/env.py`: `SnakeVectorEnv`, a Gymnasium `VectorEnv` that starts `node --import tsx src/cli/env.ts` and drives its matches as a batch (reset with a seed, step with an array of 0/1/2 actions; rewards are 0, the facts are in `infos` by field name, a match that ends is `terminated`, or `truncated` on time-up, and its observation is already the next match's). Engine errors raise `EnvError`, a dead subprocess `EnvProcessError`; `close()` stops the process. `protocol.py` is the wire codec, `bench.py` the throughput benchmark. It reads only `docs/env-protocol.md`. `ppo.py` is the PPO (network, `compute_gae`, `ppo_loss`, `collect`, `update`), `rewards.py` the rewards from step facts (`REWARDS`, by personality), `brain.py` `export_brain`, `run.py` the settings, run folder, training loop and `python -m snake_lab.run` CLI. `tests/brain_check.ts` asks the package to validate and run an exported brain.
-- `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands, and the options they share.
+- `python/`: the Python half, its own project (`pyproject.toml`, `snake_lab/`, `tests/`). `snake_lab/env.py`: `SnakeVectorEnv`, a Gymnasium `VectorEnv` that starts `node --import tsx src/cli/env.ts` and drives its matches as a batch (reset with a seed, step with an array of 0/1/2 actions; rewards are 0, the facts are in `infos` by field name, a match that ends is `terminated`, or `truncated` on time-up, and its observation is already the next match's). Engine errors raise `EnvError`, a dead subprocess `EnvProcessError`; `close()` stops the process. `protocol.py` is the wire codec, `bench.py` the throughput benchmark. It reads only `docs/env-protocol.md`. `ppo.py` is the PPO (network, `compute_gae`, `ppo_loss`, `collect`, `update`), `rewards.py` the rewards from step facts (`REWARDS`, by personality: glutton, survivor, hunter), `league.py` who the league stage meets, `brain.py` `export_brain`, `run.py` the settings, run folder, training loop and `python -m snake_lab.run` CLI. `tests/brain_check.ts` asks the package to validate and run an exported brain.
+- `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands (and `roster.ts`, which prints the roster's ids for the Python league), and the options they share.
 - `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `docs/env-protocol.md`: the `env` subprocess's wire protocol.
 - `test/`: `*.test.ts`, one per module.
@@ -103,9 +103,15 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 .venv/bin/python -m snake_lab.run --resume ../runs/ppo-1 [--rookie-updates 400]   # carry on; a longer rookie stage trains further
 ```
 
-`--help` lists every setting. Only `glutton` exists so far; a personality is a function in `REWARDS` (`rewards.py`) from the step facts to a reward.
+`--help` lists every setting. `--personality` is `glutton`, `survivor` or `hunter`; a personality is a function in `REWARDS` (`rewards.py`) from the step facts to a reward, with every weight a setting (table below):
 
-**Stages and checkpoints.** Training is a row of checkpoints of `checkpoint_every` updates: `alone_updates`, then `rookie_updates` against the rookie (both modes, delays 0 to 4, the rookie's seat random). A checkpoint is a "generation" in the folder: `settings.json` (`method: "ppo"`, `personality`, `seed`, and `generations`, `aloneGenerations`, `rookieGenerations` counted in checkpoints, plus every PPO setting), `log.jsonl` (`{generation, stage, best, mean}` where `best` and `mean` are the best and mean episode return of the episodes that ended in that checkpoint, then `update`, `steps`, `episodes`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clip_fraction`; if no episode ended, `best` and `mean` repeat the last line's), `generations/gen-NNNN.json` and `best.json` (the policy as a brain: `tanh` hidden layers, a linear output of the three logits, so the brain decider plays its most likely move), and `checkpoint.pt` (weights and optimiser, written last; files are written then renamed). `npm run promote` writes `method: "ppo"` for such a run.
+- **Glutton:** food score gained × `food_weight`, plus `tick_bonus` a tick alive.
+- **Survivor:** `alive_weight` a tick alive, plus `survivor_win_bonus` on the tick the round ends with the learner winning.
+- **Hunter:** `kill_bonus` a kill, plus `hunter_win_bonus` for a win, plus `food_bonus` × food score gained. Kills are the engine's fact, by the lab's rule: a head-on collision is a kill for neither.
+
+**The league.** After `alone_updates` and `rookie_updates`, `league_updates` (default 0, so add `--league-updates`) checkpoints play the league. PPO has no population, so the opponents are frozen **snapshots of the policy itself** (every earlier checkpoint's `generations/gen-NNNN.json`, played by the engine as brain files) and every roster snake, the rookie included (`node --import tsx src/cli/roster.ts` lists them). Each checkpoint draws its batch's opponents from `(seed, checkpoint)`: `round(four_player_share × num_envs)` matches (default 0.2) have three opponents, the rest one; each opponent is a snapshot half the time (once there is one), else a roster snake. The learner's seat is random. The stage (`alone`, `rookie`, `league`) is in each log line and in `checkpoint.pt`, and a resume lands in the right one and replays byte for byte. `--resume` may change `--rookie-updates` and `--league-updates`. The settings file gets `leagueGenerations` and `fourPlayerShare`.
+
+**Stages and checkpoints.** Training is a row of checkpoints of `checkpoint_every` updates: `alone_updates`, then `rookie_updates` against the rookie (both modes, delays 0 to 4, the rookie's seat random), then `league_updates`. A checkpoint is a "generation" in the folder: `settings.json` (`method: "ppo"`, `personality`, `seed`, and `generations`, `aloneGenerations`, `rookieGenerations` counted in checkpoints, plus every PPO setting), `log.jsonl` (`{generation, stage, best, mean}` where `best` and `mean` are the best and mean episode return of the episodes that ended in that checkpoint, then `update`, `steps`, `episodes`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clip_fraction`; if no episode ended, `best` and `mean` repeat the last line's), `generations/gen-NNNN.json` and `best.json` (the policy as a brain: `tanh` hidden layers, a linear output of the three logits, so the brain decider plays its most likely move), and `checkpoint.pt` (weights and optimiser, written last; files are written then renamed). `npm run promote` writes `method: "ppo"` for such a run.
 
 **Seeded and resumable.** At each checkpoint's start the env and the sampling generator are re-seeded from (seed, checkpoint number), and torch runs on `threads` (default 1) thread, so the same seed and settings give the same log on the same machine, and a run resumed from a checkpoint is byte for byte the run that never stopped (a test checks it). Not promised: across machines or torch versions.
 
@@ -115,7 +121,8 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `alone_updates`, `rookie_updates` | 40, 160 | PPO updates in each stage; multiples of `checkpoint_every` |
+| `alone_updates`, `rookie_updates`, `league_updates` | 40, 160, 0 | PPO updates in each stage; multiples of `checkpoint_every` |
+| `four_player_share` | 0.2 | the league's share of four-player matches; the rest are 1v1 |
 | `checkpoint_every` | 5 | updates a checkpoint (a log line, a brain, a resume point) |
 | `encoder`, `fps` | 2, 8 | what the policy reads (v1 is 23 inputs, v2 328), ticks a second |
 | `num_envs`, `num_steps` | 16, 128 | matches in the batch, ticks each plays a rollout (an update learns from their product) |
@@ -124,6 +131,8 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 | `epochs`, `minibatches` | 4, 4 | passes over a rollout and the minibatches each is cut into |
 | `clip`, `vf_coef`, `ent_coef`, `max_grad_norm` | 0.2, 0.5, 0.01, 0.5 | the surrogate's clip, the value loss's and entropy bonus's weights, gradient clip |
 | `food_weight`, `tick_bonus` | 1, 0.1 | Glutton reward per tick: score gained × `food_weight` + `tick_bonus` while alive |
+| `alive_weight`, `survivor_win_bonus` | 0.1, 10 | Survivor reward: `alive_weight` per tick alive, and the win bonus on the last tick of a win |
+| `kill_bonus`, `hunter_win_bonus`, `food_bonus` | 10, 5, 0.01 | Hunter reward: per kill, for a win, and per point of food score gained |
 | `threads` | 1 | torch's threads |
 
 A match that runs out of time is treated as ended for learning (the env doesn't give back its last observation to bootstrap from).
@@ -167,6 +176,8 @@ like a trainer (see "In the background"), directly with `npx tsx src/cli/dashboa
 ## Promoting
 
 `promote` only writes data, and a person reviews every promotion. After a pass:
+
+A PPO run promotes the same way (`npm run promote -- runs/ppo-1 12 --name "..."`, the number being a checkpoint): the run's `settings.json` says `method: "ppo"`, so the roster entry's method is `ppo`, its generation is the checkpoint number and its personality is the run's. The gauntlet still decides.
 
 1. In the `snake-colyseus` checkout, branch, commit the three changed files (the brain, the entry,
    `package.json`) and open the PR with the printed description (or `promote-<id>.md`).
