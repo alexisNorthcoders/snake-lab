@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, IncomingMessage, Server, ServerResponse } from "node:http";
 import { basename, resolve } from "node:path";
-import { runFiles } from "../run.ts";
+import { runFiles, withDefaults } from "../run.ts";
 import { LogReader } from "./log.ts";
+import { gameStream, readGenerationBest, sampleFixtures } from "./replay.ts";
 
 const page = readFileSync(new URL("./page.html", import.meta.url));
 
@@ -11,6 +12,10 @@ export interface DashboardOptions {
   port?: number;
   /** How often the log is looked at, in ms. */
   pollMs?: number;
+  /** Ticks a second the page plays the sample games at (default 8, the room's). */
+  speed?: number;
+  /** The most games shown for a generation (default 6). */
+  games?: number;
 }
 
 export interface Dashboard {
@@ -41,6 +46,8 @@ const send = (res: ServerResponse, event: string, data: unknown) => res.write(`e
  */
 export async function startDashboard(run: string, options: DashboardOptions = {}): Promise<Dashboard> {
   const settings = readRunSettings(run);
+  const speed = options.speed ?? 8;
+  const gameLimit = options.games ?? 6;
   const reader = new LogReader(runFiles(run).log);
   reader.poll();
   const clients = new Set<ServerResponse>();
@@ -57,6 +64,30 @@ export async function startDashboard(run: string, options: DashboardOptions = {}
   const timer = setInterval(tick, options.pollMs ?? 500);
   const beat = setInterval(() => { for (const res of clients) send(res, "status", status()); }, 5000);
 
+  /** Generation g's sample games as Server-Sent Events: `generation`, then each game's `start`, `tick`s and `end`, then `done`. */
+  const games = async (req: IncomingMessage, res: ServerResponse) => {
+    const g = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("generation"));
+    const brain = Number.isInteger(g) && g >= 0 ? readGenerationBest(run, g) : undefined;
+    if (!brain) {
+      res.writeHead(404, { "content-type": "text/plain" }).end(`no generation ${g} saved in this run\n`);
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    let open = true;
+    req.on("close", () => { open = false; });
+    const full = withDefaults(settings as never);
+    const sample = sampleFixtures(full, g, gameLimit);
+    send(res, "generation", { generation: g, games: sample.length });
+    for (const { fixture, index } of sample) {
+      for (const message of gameStream(fixture, index, brain, full.fps)) {
+        if (!open) return;
+        send(res, message.kind, message);
+      }
+      await new Promise((resolve) => setImmediate(resolve)); // let the trainer's box and other requests in between games
+    }
+    if (open) { send(res, "done", {}); res.end(); }
+  };
+
   const handle = (req: IncomingMessage, res: ServerResponse) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
     if (req.method !== "GET") {
@@ -64,7 +95,9 @@ export async function startDashboard(run: string, options: DashboardOptions = {}
     } else if (path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(page);
     } else if (path === "/api/run") {
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ name: basename(resolve(run)), settings }));
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ name: basename(resolve(run)), settings, replay: { speed, games: gameLimit } }));
+    } else if (path === "/games") {
+      games(req, res);
     } else if (path === "/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       tick(); // so this client's whole log is current, and nothing is sent twice

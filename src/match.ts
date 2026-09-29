@@ -15,6 +15,7 @@ import {
   newPlainCell,
   roundTicks,
   startingPositions,
+  tailCells,
   tick,
   turn
 } from "snake-colyseus/engine";
@@ -39,6 +40,17 @@ export interface MatchOptions {
   fps: number;
   /** Keep every tick's events (the default), or only the result. */
   keepEvents?: boolean;
+  /** Called with the board before the first tick (tick 0) and after every tick. Only looks: never changes a match. */
+  onTick?: (frame: Frame) => void;
+}
+
+/** The board at the end of a tick: each snake's cells (head first), the food, and what happened on that tick. */
+export interface Frame {
+  /** 0 is the board as dealt. */
+  tick: number;
+  snakes: { id: string; cells: Cell[]; score: number; dead: boolean }[];
+  food: { x: number; y: number; type: string }[];
+  events: MatchEvent[];
 }
 
 /** An engine event, with the tick it happened on, counting from 1. */
@@ -117,7 +129,7 @@ export const checkMatchOptions = (options: MatchOptions) => {
  */
 export function playMatch(options: MatchOptions): MatchResult {
   checkMatchOptions(options);
-  const { seed, seats, mode, fps, keepEvents = true } = options;
+  const { seed, seats, mode, fps, keepEvents = true, onTick } = options;
 
   const rng = mulberry32(seed);
   const bots: Bot[] = seats.map(({ player, delay }, i) => ({
@@ -140,6 +152,15 @@ export function playMatch(options: MatchOptions): MatchResult {
   dealRound(game, 0, newPlainCell);
   beginPlay(game, roundTicks(fps));
 
+  const frame = (tick: number, events: MatchEvent[]): Frame => ({
+    tick,
+    snakes: bots.map(({ shape: { id, snake } }) =>
+      ({ id, cells: [{ x: snake.x, y: snake.y }, ...tailCells(snake).map(({ x, y }) => ({ x, y }))], score: snake.score, dead: snake.isDead })),
+    food: [...game.foodCoordinates].map(({ x, y, type }) => ({ x, y, type })),
+    events
+  });
+  onTick?.(frame(0, []));
+
   const events: MatchEvent[] = [];
   for (let ticks = 1; ; ticks++) {
     bots.forEach((bot) => bot.snapshots.record(game));
@@ -154,6 +175,7 @@ export function playMatch(options: MatchOptions): MatchResult {
 
     const report = tick(game, rng, newPlainCell);
     if (keepEvents) report.events.forEach((event) => events.push({ ...event, tick: ticks }));
+    onTick?.(frame(ticks, report.events.map((event) => ({ ...event, tick: ticks }))));
 
     if (report.roundOver) {
       const { reason, winnerId } = report;

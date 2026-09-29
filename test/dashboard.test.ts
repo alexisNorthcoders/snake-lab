@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { LogReader } from "../src/dashboard/log.ts";
 import { startDashboard } from "../src/dashboard/server.ts";
 import { createRun, runFiles } from "../src/run.ts";
-import { DEFAULT_SETTINGS, GenerationLog, TrainSettings } from "../src/train.ts";
+import { DEFAULT_SETTINGS, GenerationLog, TrainSettings, generationRng, randomBrain } from "../src/train.ts";
 
 const settings: TrainSettings = { ...DEFAULT_SETTINGS, personality: "glutton", seed: 3, generations: 6, aloneGenerations: 2, rookieGenerations: 2, population: 4, matches: 1, hidden: [4] };
 const line = (generation: number, best = generation * 2): GenerationLog => ({ generation, stage: generation < 2 ? "alone" : "rookie", best, mean: best / 2 });
@@ -159,6 +159,27 @@ describe("dashboard", () => {
       assert.deepEqual(client.events[1].data.line, line(0));
     } finally {
       client.close();
+      await dashboard.close();
+    }
+  });
+
+  it("streams a generation's sample games tick by tick, and refuses one that isn't saved", async () => {
+    const run = newRun();
+    writeFileSync(runFiles(run).generation(0), JSON.stringify(randomBrain(generationRng(1, 0), settings.hidden, settings.activation, 0.5)));
+    const dashboard = await startDashboard(run, { port: 0, games: 2 });
+    try {
+      assert.equal((await fetch(`${dashboard.url}/games?generation=1`)).status, 404);
+      assert.equal((await fetch(`${dashboard.url}/games?generation=x`)).status, 404);
+      const body = await (await fetch(`${dashboard.url}/games?generation=0`)).text();
+      const events = [...body.matchAll(/^event: (.*)\ndata: (.*)$/gm)].map((m) => ({ event: m[1], data: JSON.parse(m[2]) }));
+      assert.deepEqual(events[0], { event: "generation", data: { generation: 0, games: 1 } });
+      assert.equal(events[events.length - 1].event, "done");
+      assert.deepEqual(events.filter((e) => e.event === "start").map((e) => e.data.game.index), [0]);
+      assert.equal(events.filter((e) => e.event === "end").length, 1);
+      assert.ok(events.filter((e) => e.event === "tick").length > 2);
+      const info = await (await fetch(`${dashboard.url}/api/run`)).json();
+      assert.deepEqual(info.replay, { speed: 8, games: 2 });
+    } finally {
       await dashboard.close();
     }
   });
