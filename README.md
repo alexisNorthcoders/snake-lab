@@ -64,6 +64,25 @@ with `npm run match -- --players runs/glutton-1/best.json,rookie` and put throug
 `--help` lists the settings (population, mutation, stages and so on); only the Glutton can be
 trained for now. `AGENTS.md` describes running a long job in the background.
 
+## Promoting a snake
+
+```sh
+npm run promote -- runs/glutton-1 50 --name "Nimble Pete" [--target ../snake-colyseus]
+```
+
+This puts generation 50's best brain through the gauntlet (`--seeds`, `--base-seed` and `--fps`
+work as there). If it passes, it writes the brain and a roster entry into the `snake-colyseus`
+checkout, bumps that repo's `engineVersion` by a minor version, and prints a PR description with
+the training settings, the gauntlet's table and verdict, the command and the engine tag; it's saved
+in the run folder as `promote-<id>.md`. If it fails, or the name or its id is already in the
+roster, or the target isn't a `snake-colyseus` checkout, or the generation's brain is missing,
+it writes nothing and exits 1. It never runs git. What's left is for a person:
+
+1. In `snake-colyseus`, branch, commit the brain, the entry and `package.json`, and open the PR
+   with the printed description.
+2. When it's merged and tagged, bump the `snake-colyseus` pin in this repo's `package.json` to the
+   new `engine-vX.Y.Z` and `npm install`.
+
 ## Other commands
 
 `npm run bench -- --matches 500` plays many matches and prints ticks per second. `npm test` runs

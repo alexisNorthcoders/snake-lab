@@ -135,3 +135,25 @@ export function verdict(report: GauntletReport): Verdict {
   const winRate = matches === 0 ? 0 : wins / matches;
   return { bar: BAR, winRate, matches, pass: matches > 0 && winRate >= BAR };
 }
+
+const percent = (rate: number) => `${(rate * 100).toFixed(1)}%`.padStart(6);
+
+/** The report as the `gauntlet` command prints it: the table, the bar and the verdict. `seconds` adds how long it took. */
+export function formatReport(report: GauntletReport, opponents: RosterEntry[], seconds?: number): string {
+  const nameOf = new Map(opponents.map((e) => [e.id, e.name]));
+  const row = (c: GauntletCell) => {
+    const { win, loss, draw } = rates(c);
+    return `  ${(nameOf.get(c.opponent) ?? c.opponent).padEnd(12)} ${String(c.delay).padStart(5)}  ${c.mode.padEnd(8)} ${String(c.matches).padStart(7)}  ` +
+      `${percent(win)}  ${percent(loss)}  ${percent(draw)}`;
+  };
+  const matches = report.cells.reduce((sum, c) => sum + c.matches, 0);
+  const { bar, winRate, pass } = verdict(report);
+  return [
+    `${report.candidate}: seeds ${report.baseSeed} to ${report.baseSeed + report.seeds - 1}, each in both seats, at ${report.fps} fps`,
+    `${matches} matches${seconds === undefined ? "" : ` in ${seconds.toFixed(1)}s`}\n`,
+    `  ${"opponent".padEnd(12)} delay  ${"mode".padEnd(8)} matches     win    loss    draw`,
+    ...report.cells.map(row),
+    `\nBar: win at least ${percent(bar).trim()} against ${nameOf.get(BAR_OPPONENT) ?? BAR_OPPONENT} at delay ${BAR_DELAY}, both modes together.`,
+    `${report.candidate} won ${percent(winRate).trim()}: ${pass ? "PASS" : "FAIL"}`
+  ].join("\n");
+}
