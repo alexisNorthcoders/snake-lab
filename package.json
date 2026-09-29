@@ -15,11 +15,12 @@
     "train": "tsx src/cli/train.ts",
     "promote": "tsx src/cli/promote.ts",
     "dashboard": "tsx src/cli/dashboard.ts",
+    "env": "tsx src/cli/env.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
-    "snake-colyseus": "github:alexisNorthcoders/snake-colyseus#engine-v4.1.0"
+    "snake-colyseus": "github:alexisNorthcoders/snake-colyseus#engine-v4.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
