@@ -6,7 +6,7 @@ and holds the trainers (neuroevolution in TypeScript, then PPO in Python), the t
 and the experiment logs.
 
 **Status:** plays seeded headless matches (slice 09, #2), runs the gauntlet (#3) and trains a Glutton
-by neuroevolution on one core (#7). No checkpoints, resuming or PPO yet.
+by neuroevolution (#7) on every core, with a checkpoint every generation and resuming (#8). No PPO yet.
 
 ## Stack and layout
 
@@ -20,11 +20,16 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   `runGauntlet` (the grid of opponent × delay 0-4 × mode, N seeds each played in both seats) and
   `verdict` (the bar: at least 60% of matches won against the rookie at delay 2, both modes; draws
   count as not winning). `promote` will use it.
-- `src/train.ts`: the neuroevolution trainer. `train` (the whole run), and its parts: `randomBrain`,
-  `crossover`, `mutate`, `breed`, `fixtures` (a generation's matches), `gluttonFitness`. A genome is a
-  brain in `snake-colyseus/bots`' format, played through `brainDecider`, so it's saved with no conversion.
+- `src/train.ts`: the neuroevolution trainer. `train` (the whole run, or the rest of one from a
+  `Checkpoint`), and its parts: `randomBrain`, `crossover`, `mutate`, `breed`, `fixtures` (a
+  generation's matches), `evaluate`, `gluttonFitness`. A genome is a brain in `snake-colyseus/bots`'
+  format, played through `brainDecider`, so it's saved with no conversion.
+- `src/pool.ts` and `src/worker.ts`: the worker threads a generation's snakes are shared out to, one
+  snake a job, each fitness put back in the snake's place.
+- `src/run.ts`: the run folder. `createRun`, `trainRun` (from generation 0 or the latest
+  checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
 - `src/cli/`: the `match`, `bench`, `gauntlet` and `train` commands, and the options they share.
-- `docs/benchmarks/`: gauntlet results worth keeping, each with its command, engine tag and date.
+- `docs/benchmarks/`: gauntlet and training speeds worth keeping, each with its command, engine tag, machine and date.
 - `test/`: `*.test.ts`, one per module.
 
 ## Commands
@@ -42,10 +47,13 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   `--fps` (default 8). On the Pi it plays about 14 matches a second: about 5 minutes for the rookie
   at the defaults.
 - `npm run train -- --personality glutton --run runs/glutton-1 --seed 1`: trains by neuroevolution
-  and writes the run folder (`settings.json`, `log.jsonl` with one `{generation, stage, best, mean}`
-  line a generation, printed as it goes, and `best.json`, the last generation's fittest brain). The
-  folder mustn't exist yet; `runs/` is ignored by git. Only `glutton` can be trained; the others are
-  refused. `--help` lists every setting. `best.json` plays in `match --players` and the `gauntlet`.
+  and writes the run folder (see "Long runs"), printing each generation's log line as it goes and a
+  summary at the end: matches a second and generations an hour. The folder mustn't exist yet;
+  `runs/` is ignored by git. Only `glutton` can be trained; the others are refused. `--help` lists
+  every setting. `--workers` (default: one a core) sets the threads. Any saved brain plays in
+  `match --players` and the `gauntlet`.
+- `npm run train -- --resume runs/glutton-1`: carries on from the latest checkpoint. Only
+  `--generations` (to train further, or finish) and `--workers` may be given.
 
 ## The trainer's settings
 
@@ -69,8 +77,56 @@ Every one is a `train` option (`--help`) and a field of `TrainSettings`; default
 
 A child's parents cross unit by unit: each unit takes its incoming weights and bias whole from one
 parent. A generation's matches draw their seed, mode (both), delay (0 to 4, the rookie at the same)
-and seat from the generation's generator. At the defaults a generation is 500 matches, at least 40
-seconds on the Pi (more as the snakes learn to live longer), so a run takes half an hour or more.
+and seat from the generation's generator. At the defaults a generation is 500 matches: on the Pi's
+4 cores, about 6 seconds a generation while they play alone and longer as they learn to live
+against the rookie (see `docs/benchmarks/`).
+
+## Long runs
+
+A run folder holds:
+
+- `settings.json`: the run's settings. Resuming only ever changes `generations` in it.
+- `log.jsonl`: one `{generation, stage, best, mean}` line a generation.
+- `generations/gen-NNNN.json`: every generation's fittest, a brain file, so any generation can be
+  promoted later (a difficulty ladder: gen 10, 50, 500). `best.json` is the latest one again.
+- `checkpoint.json`: the next generation's number and its whole population, bred from the last one
+  played. It's the only population on disk, overwritten each generation.
+
+Each file is written to `<name>.tmp` and renamed into place, the checkpoint last of a generation's
+files, so a crash mid-write leaves the previous checkpoint whole. A resume drops log lines past the
+checkpoint and replays from it, overwriting that generation's brain file. Because every draw in
+generation `g` comes from `generationRng(seed, g)`, a resumed run's logs and brains are byte for byte
+those of a run that never stopped, and `--generations` can raise a finished run's target and carry on.
+
+**Stopping.** Ctrl-C or SIGTERM lets the current generation finish and be saved, then exits 0 with
+a `Stopped:` line. A second one abandons the generation (exit 130); SIGKILL or a crash does the same.
+Either way the latest checkpoint is intact: `--resume` it.
+
+**Workers.** A generation's snakes are shared out to worker threads (`src/pool.ts`), by default one
+a core (`os.availableParallelism()`); `--workers 1` plays on the main thread. Fitnesses go back in
+the population's order, so the number of workers never changes a result, and it can differ between
+a run and its resume. A snake that throws, or a worker that dies, fails the run loudly (exit 1,
+checkpoint kept); it's never scored as zero. Leave a core free with `--workers 3` if the machine
+has other work.
+
+**In the background.** Train on the Pi or the VPS, never on the explorer machine. Work out the
+length first: at the defaults the Pi's 4 cores train about 550 generations an hour while the snakes
+still die young, far fewer once they live long (see `docs/benchmarks/`). Any of these survives the
+shell closing:
+
+Run `tsx` directly rather than through `npm run`: npm doesn't pass a signal on to the trainer, so
+stopping npm would leave the trainer running without it. `tsx` does pass signals on.
+
+- `nohup npx tsx src/cli/train.ts --personality glutton --run runs/glutton-1 --seed 1 > runs/glutton-1.out 2>&1 &`,
+  then `tail -f runs/glutton-1.out`. Stop it with `pkill -INT -f "train.ts.*runs/glutton-1"`.
+- `tmux new -s train`, run `npm run train -- ...` there, detach with Ctrl-B D, come back with
+  `tmux attach -t train`, and stop it with Ctrl-C.
+- pm2: `pm2 start node_modules/.bin/tsx --interpreter none --name glutton-1 --no-autorestart --kill-timeout 600000 -- src/cli/train.ts --personality glutton --run runs/glutton-1 --seed 1`,
+  logs with `pm2 logs glutton-1`, and stop with `pm2 stop glutton-1` (the kill timeout gives the
+  generation time to finish). Carry on with the same line but `-- src/cli/train.ts --resume runs/glutton-1`
+  after `pm2 delete glutton-1`. Never restart, stop or delete the `agent-runner` process.
+
+After a stop or crash, `npm run train -- --resume runs/glutton-1` carries on.
 
 ## Determinism
 
@@ -79,7 +135,8 @@ always give the same result and events. Everything random draws from the engine'
 seeded once per match; nothing in a match reads the clock or `Math.random`. Keep it that way:
 the gauntlet and trainers rely on replaying a match from its seed. The trainer draws everything in
 generation `g` (the first brains, the matches, the breeding) from `generationRng(seed, g)`, so the
-same seed and settings give the same log and brains.
+same seed and settings give the same log and brains, whatever the workers and wherever it was
+stopped and resumed.
 
 ## How it relates to the game
 

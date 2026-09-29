@@ -1,19 +1,25 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { availableParallelism } from "node:os";
+import { performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
 import { Activation, Personality } from "snake-colyseus/bots";
-import { DEFAULT_SETTINGS, TrainSettings, checkSettings, train } from "../train.ts";
+import { DEFAULT_SETTINGS, TrainSettings } from "../train.ts";
+import { createRun, openRun, runFiles, trainRun } from "../run.ts";
 import { exit, orExit, parseNumber } from "./args.ts";
 
 const defaults = DEFAULT_SETTINGS;
 const usage = `Trains a population of brains by neuroevolution, alone on the board and then against the rookie.
-Writes settings.json, log.jsonl (one line a generation, printed as it goes) and best.json (the last
-generation's fittest brain) into the run folder.
+Writes into the run folder: settings.json, log.jsonl (one line a generation, printed as it goes),
+generations/gen-NNNN.json (each generation's fittest brain), best.json (the latest one's) and
+checkpoint.json (the population to carry on from). Ctrl-C or SIGTERM stops after the current
+generation; a second one abandons it. Either way the latest checkpoint is kept.
 
 Usage: npm run train -- --personality glutton --run <folder> [options]
+       npm run train -- --resume <folder> [--generations <n>] [--workers <n>]
 
   --personality <p>      what to train for: only glutton for now
   --run <folder>         the run folder to write, which mustn't exist yet (runs/ is ignored by git)
+  --resume <folder>      carry on a run from its latest checkpoint, with its settings
+  --workers <n>          threads to play matches on; never changes the result (default ${availableParallelism()}, one a core)
   --seed <n>             the run's seed, a whole number in [0, 2^32) (default 1)
   --generations <n>      generations in all (default ${defaults.generations})
   --alone <n>            of them, how many are played alone before the rookie (default ${defaults.aloneGenerations})
@@ -48,17 +54,30 @@ const options = {
   fps: { type: "string", default: String(defaults.fps) },
   "food-weight": { type: "string", default: String(defaults.foodWeight) },
   "tick-bonus": { type: "string", default: String(defaults.tickBonus) },
+  resume: { type: "string" },
+  workers: { type: "string", default: String(availableParallelism()) },
   help: { type: "boolean" }
 } as const;
 
-const args = orExit(usage, () => parseArgs({ options, strict: true }).values);
+const { values: args, tokens } = orExit(usage, () => parseArgs({ options, strict: true, tokens: true }));
 if (args.help) exit(usage, 0);
+/** The options given on the command line, not left at their defaults. */
+const given = new Set(tokens.flatMap((token) => (token.kind === "option" ? [token.name] : [])));
+const number = (name: keyof typeof options) => parseNumber(name, args[name] as string);
 
-const { settings, run } = orExit(usage, () => {
+const { run, workers, generations } = orExit(usage, () => {
+  const workers = number("workers");
+  if (!Number.isInteger(workers) || workers < 1) throw new Error(`--workers must be a whole number of at least 1, not ${workers}`);
+  if (args.resume !== undefined) {
+    const fixed = [...given].filter((name) => !["resume", "generations", "workers"].includes(name));
+    if (fixed.length > 0) {
+      throw new Error(`a resumed run keeps its settings: only --generations and --workers can be given, not ${fixed.map((n) => `--${n}`).join(", ")}`);
+    }
+    openRun(args.resume);
+    return { run: args.resume, workers, generations: given.has("generations") ? number("generations") : undefined };
+  }
   if (!args.personality) throw new Error("give a --personality");
   if (!args.run) throw new Error("give a --run folder");
-  if (existsSync(args.run)) throw new Error(`${args.run} already exists: name a new run folder`);
-  const number = (name: keyof typeof options) => parseNumber(name, args[name] as string);
   const settings: TrainSettings = {
     personality: args.personality as Personality,
     seed: number("seed"),
@@ -77,16 +96,35 @@ const { settings, run } = orExit(usage, () => {
     foodWeight: number("food-weight"),
     tickBonus: number("tick-bonus")
   };
-  checkSettings(settings);
-  return { settings, run: args.run };
+  createRun(args.run, settings);
+  return { run: args.run, workers, generations: undefined };
 });
 
-mkdirSync(run, { recursive: true });
-writeFileSync(join(run, "settings.json"), `${JSON.stringify(settings, null, 2)}\n`);
-const { best } = train(settings, (line) => {
-  const text = JSON.stringify(line);
-  console.log(text);
-  appendFileSync(join(run, "log.jsonl"), `${text}\n`);
-});
-writeFileSync(join(run, "best.json"), `${JSON.stringify(best, null, 2)}\n`);
-console.log(`best brain: ${join(run, "best.json")}`);
+let stopping = false;
+const onSignal = (signal: NodeJS.Signals) => {
+  if (stopping) exit(`${signal} again: abandoning the generation. The latest checkpoint is kept.`, 130);
+  stopping = true;
+  console.error(`${signal}: stopping after this generation (again to abandon it)`);
+};
+process.on("SIGINT", onSignal);
+process.on("SIGTERM", onSignal);
+
+const { settings } = openRun(run);
+const target = generations ?? settings.generations;
+const start = performance.now();
+const result = await trainRun(run, {
+  workers,
+  generations,
+  stop: () => stopping,
+  onGeneration: (line) => console.log(JSON.stringify(line))
+}).catch((error: Error) => exit(`training failed, the latest checkpoint is kept: ${error.stack ?? error.message}`));
+if (!result) exit(`${run} already has all its ${target} generations: give more with --generations`, 0);
+
+const seconds = (performance.now() - start) / 1000;
+const { log } = result;
+const last = log.at(-1)!.generation;
+console.log(`${last < target - 1 ? "Stopped" : "Trained"}: generations ${log[0].generation} to ${last} of ${target} ` +
+  `in ${seconds.toFixed(1)}s on ${workers} worker${workers === 1 ? "" : "s"}: ` +
+  `${((log.length * settings.population * settings.matches) / seconds).toFixed(1)} matches a second, ` +
+  `${Math.round((log.length * 3600) / seconds)} generations an hour`);
+console.log(`best brain: ${runFiles(run).best}`);
