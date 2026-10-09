@@ -86,7 +86,7 @@ it writes nothing and exits 1. It never runs git. What's left is for a person:
 ## The training dashboard
 
 ```sh
-npm run dashboard -- runs/glutton-1 [--port 8080] [--host 127.0.0.1]
+npm run dashboard -- runs/glutton-1 --port 8091 [--host 127.0.0.1]   # 8080 is the default, but go-server uses it
 ```
 
 Serves a page next to a run: its settings, the latest generation and stage, and a chart of best and

@@ -117,7 +117,7 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 
 **Stopping.** Ctrl-C or SIGTERM lets the current checkpoint (`checkpoint_every` updates) finish and be saved, then exits 0 with `Stopped:`; a second one abandons it. The engine subprocess runs in its own session so a Ctrl-C at the terminal reaches only the trainer.
 
-**In the background** (on the Pi or VPS, never the explorer machine), as for `train`: `nohup .venv/bin/python -m snake_lab.run --run ../runs/ppo-1 --seed 1 > ../runs/ppo-1.out 2>&1 &` from `python/`, stop with `pkill -INT -f "snake_lab.run.*runs/ppo-1"`, resume with `--resume`. Or in tmux; pm2 as for `train` with `--interpreter none` and `.venv/bin/python -m snake_lab.run` (`--kill-timeout` long enough for a checkpoint). About 2,000 steps a second on the Pi at the defaults alone, slower against the rookie (a checkpoint of 5 updates is 10,240 steps).
+**In the background** (on the explorer machine, the VPS or the Pi; see "Where to train"), as for `train`: `nohup .venv/bin/python -m snake_lab.run --run ../runs/ppo-1 --seed 1 > ../runs/ppo-1.out 2>&1 &` from `python/`, stop with `pkill -INT -f "snake_lab.run.*runs/ppo-1"`, resume with `--resume`. Or in tmux; pm2 as for `train` with `--interpreter none` and `.venv/bin/python -m snake_lab.run` (`--kill-timeout` long enough for a checkpoint). About 2,000 steps a second on the Pi at the defaults alone, slower against the rookie (a checkpoint of 5 updates is 10,240 steps).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -163,7 +163,8 @@ pass nor the encoder), and `chosen`, the output (0 left, 1 straight, 2 right) of
 shades nodes by value, marks the winning output, and redraws the network when the generation's brain changes. It needs
 `snake-colyseus` at `engine-v4.1.0` or later (the lab pins `engine-v4.2.0`, which has encoder v2).
 
-Run it on the same box as the run. It listens on `127.0.0.1`, so from your own machine:
+Run it on the same box as the run. It listens on `127.0.0.1`: on the explorer machine open it directly (on a
+port other than go-server's 8080, e.g. `--port 8091`), and from another machine tunnel to it:
 
 ```sh
 ssh -L 8080:127.0.0.1:8080 pi@<the Pi>      # then open http://localhost:8080
@@ -260,10 +261,15 @@ a run and its resume. A snake that throws, or a worker that dies, fails the run 
 checkpoint kept); it's never scored as zero. Leave a core free with `--workers 3` if the machine
 has other work.
 
-**In the background.** Train on the Pi or the VPS, never on the explorer machine. Work out the
-length first: at the defaults the Pi's 4 cores train about 550 generations an hour while the snakes
-still die young, far fewer once they live long (see `docs/benchmarks/`). Any of these survives the
-shell closing:
+**Where to train.** On the explorer machine (a Ryzen 5 2600, 12 threads), the VPS, or the Pi. The
+Pi runs at 100% CPU and over 85°C on a long run, so the explorer machine is the usual choice. There,
+run at low priority with `nice -n 19`, leave cores free with `--workers`, and watch the CPU temperature
+in `/sys/class/hwmon/hwmon0/temp1_input` (millidegrees; `lm-sensors` isn't installed). It gets turned
+off, so expect to `--resume`. Its port 8080 is go-server's, so give the dashboard another `--port`.
+
+**In the background.** Work out the length first: at the defaults the Pi's 4 cores train about 550
+generations an hour while the snakes still die young, far fewer once they live long (see
+`docs/benchmarks/`). Any of these survives the shell closing:
 
 Run `tsx` directly rather than through `npm run`: npm doesn't pass a signal on to the trainer, so
 stopping npm would leave the trainer running without it. `tsx` does pass signals on.
