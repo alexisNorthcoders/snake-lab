@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { ChildProcessByStdio, spawn } from "node:child_process";
+import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { after, describe, it } from "node:test";
 import { Readable, Writable } from "node:stream";
 import { pickBot } from "snake-colyseus/bots";
-import { FACT_COUNT, FACT_FIELDS, Frame, FrameReader, encodeFrame } from "../src/env.ts";
+import { FACT_COUNT, FACT_FIELDS, type Frame, FrameReader, encodeFrame } from "../src/env.ts";
 import { mulberry32 } from "snake-colyseus/engine";
 import { STRAIGHT, SteppedMatch } from "../src/match.ts";
 

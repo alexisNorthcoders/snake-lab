@@ -1,5 +1,5 @@
-import { GameMode, mulberry32 } from "snake-colyseus/engine";
-import { Action, EncoderVersion, OBSERVATION_SIZE, Seat, StepFacts, SteppedMatch } from "./match.ts";
+import { type GameMode, mulberry32 } from "snake-colyseus/engine";
+import { type Action, type EncoderVersion, OBSERVATION_SIZE, type Seat, type StepFacts, SteppedMatch } from "./match.ts";
 import { loadCandidate } from "./gauntlet.ts";
 
 /** The wire protocol's version, sent in every JSON header so a reader can refuse one it doesn't know. */

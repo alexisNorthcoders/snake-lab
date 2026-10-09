@@ -1,10 +1,10 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Brain, brainDecider, brainProblems, loadRoster, roster } from "snake-colyseus/bots";
-import { GauntletOptions, GauntletReport, Verdict, formatReport, opponentsFor, runGauntlet, verdict } from "./gauntlet.ts";
+import { type Brain, brainDecider, brainProblems, loadRoster, roster } from "snake-colyseus/bots";
+import { type GauntletOptions, type GauntletReport, type Verdict, formatReport, opponentsFor, runGauntlet, verdict } from "./gauntlet.ts";
 import { runFiles } from "./run.ts";
-import { TrainSettings } from "./train.ts";
+import { type TrainSettings } from "./train.ts";
 
 /** Where the snake-colyseus checkout is, unless told otherwise. */
 export const DEFAULT_TARGET = "../snake-colyseus";

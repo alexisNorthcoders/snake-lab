@@ -3,13 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { Decider, brainDecider, encode, layerValues } from "snake-colyseus/bots";
+import { type Decider, brainDecider, encode, layerValues } from "snake-colyseus/bots";
 import { gameStream, readGenerationBest, replayable, sampleFixtures } from "../src/dashboard/replay.ts";
 import { networkLayout } from "../src/dashboard/network.ts";
 import { playMatch } from "../src/match.ts";
 import { createRun } from "../src/run.ts";
 import { trainRun } from "../src/run.ts";
-import { DEFAULT_SETTINGS, Fixture, TrainSettings, drawGeneration, evaluate, fixtureOptions, fixtures, generationRng, randomBrain, stageOf } from "../src/train.ts";
+import { DEFAULT_SETTINGS, type Fixture, type TrainSettings, drawGeneration, evaluate, fixtureOptions, fixtures, generationRng, randomBrain, stageOf } from "../src/train.ts";
 
 const settings: TrainSettings = { ...DEFAULT_SETTINGS, personality: "glutton", seed: 5, generations: 6, aloneGenerations: 2, rookieGenerations: 2, population: 4, matches: 6, hidden: [4] };
 

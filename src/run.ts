@@ -1,7 +1,7 @@
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { Brain } from "snake-colyseus/bots";
-import { Checkpoint, DEFAULT_SETTINGS, GenerationLog, TrainResult, TrainSettings, checkSettings, stageOf, train } from "./train.ts";
+import { type Brain } from "snake-colyseus/bots";
+import { type Checkpoint, DEFAULT_SETTINGS, type GenerationLog, type TrainResult, type TrainSettings, checkSettings, stageOf, train } from "./train.ts";
 
 /**
  * A run folder:

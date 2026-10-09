@@ -6,7 +6,7 @@ import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { loadCandidate } from "../src/gauntlet.ts";
 import { createRun, runFiles, trainRun } from "../src/run.ts";
-import { DEFAULT_SETTINGS, TrainSettings } from "../src/train.ts";
+import { DEFAULT_SETTINGS, type TrainSettings } from "../src/train.ts";
 
 const short: TrainSettings = {
   ...DEFAULT_SETTINGS, personality: "glutton", seed: 3, generations: 4, aloneGenerations: 1, population: 6, matches: 2, hidden: [4]

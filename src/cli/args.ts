@@ -1,7 +1,7 @@
-import { GameMode } from "snake-colyseus/engine";
+import { type GameMode } from "snake-colyseus/engine";
 import { roster } from "snake-colyseus/bots";
 import { loadCandidate } from "../gauntlet.ts";
-import { MatchOptions, Seat } from "../match.ts";
+import { type MatchOptions, type Seat } from "../match.ts";
 
 const rosterIds = roster.map((entry) => entry.id).join(", ");
 

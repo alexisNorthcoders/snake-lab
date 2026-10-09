@@ -6,10 +6,10 @@ import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { loadRoster } from "snake-colyseus/bots";
 import { mulberry32 } from "snake-colyseus/engine";
-import { GauntletOptions, GauntletReport } from "../src/gauntlet.ts";
+import { type GauntletOptions, type GauntletReport } from "../src/gauntlet.ts";
 import { bumpMinor, promote, slug } from "../src/promote.ts";
 import { createRun, runFiles } from "../src/run.ts";
-import { DEFAULT_SETTINGS, TrainSettings, randomBrain } from "../src/train.ts";
+import { DEFAULT_SETTINGS, type TrainSettings, randomBrain } from "../src/train.ts";
 
 const settings: TrainSettings = { ...DEFAULT_SETTINGS, personality: "glutton", seed: 3, generations: 4, aloneGenerations: 1, population: 6, hidden: [4] };
 const dummyEntry = { id: "dummy", name: "Dummy", generation: 0, method: "hand-made", brain: "dummy.json" };
