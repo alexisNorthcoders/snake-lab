@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { LogReader } from "../src/dashboard/log.ts";
 import { startDashboard } from "../src/dashboard/server.ts";
 import { createRun, runFiles } from "../src/run.ts";
-import { DEFAULT_SETTINGS, GenerationLog, TrainSettings, generationRng, randomBrain } from "../src/train.ts";
+import { DEFAULT_SETTINGS, type GenerationLog, type TrainSettings, generationRng, randomBrain } from "../src/train.ts";
 
 const settings: TrainSettings = { ...DEFAULT_SETTINGS, personality: "glutton", seed: 3, generations: 6, aloneGenerations: 2, rookieGenerations: 2, population: 4, matches: 1, hidden: [4] };
 const line = (generation: number, best = generation * 2): GenerationLog => ({ generation, stage: generation < 2 ? "alone" : "rookie", best, mean: best / 2 });

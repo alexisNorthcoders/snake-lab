@@ -16,6 +16,16 @@ export interface Job {
 export type Done = { index: number; fitness: number } | { index: number; error: string };
 
 /**
+ * A worker thread doesn't get tsx's loader, and Node (22.18 on) strips types
+ * natively instead, which can't load a module that imports a type as a value.
+ * So each worker boots from a module that registers tsx, then loads worker.ts.
+ */
+function bootUrl(): URL {
+  const boot = `import { register } from ${JSON.stringify(import.meta.resolve("tsx/esm/api"))}; register(); await import(${JSON.stringify(new URL("./worker.ts", import.meta.url).href)});`;
+  return new URL(`data:text/javascript,${encodeURIComponent(boot)}`);
+}
+
+/**
  * Worker threads that play a generation's snakes, each through every fixture.
  * A worker takes the next snake as soon as it's free, and each fitness goes
  * back in the snake's place, so the number of workers never changes the
@@ -29,7 +39,7 @@ export class Pool {
   constructor(size: number) {
     if (!Number.isInteger(size) || size < 1) throw new Error(`workers must be a whole number of at least 1, not ${size}`);
     this.workers = Array.from({ length: size }, (_, i) => {
-      const worker = new Worker(new URL("./worker.ts", import.meta.url));
+      const worker = new Worker(bootUrl());
       worker.on("message", (done: Done) => this.generation?.onDone(worker, done));
       const fail = (error: Error) => {
         this.failure ??= error;

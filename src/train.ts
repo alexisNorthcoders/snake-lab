@@ -1,17 +1,17 @@
-import { GameMode, RULES_VERSION, Rng, mulberry32 } from "snake-colyseus/engine";
+import { type GameMode, RULES_VERSION, type Rng, mulberry32 } from "snake-colyseus/engine";
 import {
-  Activation,
+  type Activation,
   BRAIN_FORMAT,
   BRAIN_FORMAT_VERSION,
-  Brain,
+  type Brain,
   ENCODER_SIZE,
   ENCODER_VERSION,
-  Personality,
+  type Personality,
   brainDecider,
   pickBot,
   roster
 } from "snake-colyseus/bots";
-import { MatchOptions, MatchResult, Player, playMatch } from "./match.ts";
+import { type MatchOptions, type MatchResult, type Player, playMatch } from "./match.ts";
 import { DELAYS, MODES } from "./gauntlet.ts";
 import { Pool } from "./pool.ts";
 

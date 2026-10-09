@@ -1,13 +1,13 @@
 import {
-  Cell,
-  DeathCause,
-  Direction,
-  FoodPlacement,
-  GameMode,
-  PlayerShape,
-  RoundEndReason,
-  SnakeShape,
-  TickEvent,
+  type Cell,
+  type DeathCause,
+  type Direction,
+  type FoodPlacement,
+  type GameMode,
+  type PlayerShape,
+  type RoundEndReason,
+  type SnakeShape,
+  type TickEvent,
   beginPlay,
   dealRound,
   directionMap,
@@ -20,7 +20,7 @@ import {
   tick,
   turn
 } from "snake-colyseus/engine";
-import { BotView, Decider, ENCODER_SIZE, ENCODER_V2_SIZE, RosterEntry, Snapshots, deciderFor, encode, encodeV2, viewFor } from "snake-colyseus/bots";
+import { type BotView, type Decider, ENCODER_SIZE, ENCODER_V2_SIZE, type RosterEntry, Snapshots, deciderFor, encode, encodeV2, viewFor } from "snake-colyseus/bots";
 
 /** Who plays a seat: a roster entry, or any decider with a name (a brain that isn't in the roster, say). */
 export type Player = RosterEntry | { name: string; decider: Decider };

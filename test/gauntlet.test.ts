@@ -7,8 +7,8 @@ import { describe, it } from "node:test";
 import { dummyBrain, pickBot, roster } from "snake-colyseus/bots";
 import {
   BAR,
-  GauntletCell,
-  GauntletReport,
+  type GauntletCell,
+  type GauntletReport,
   loadCandidate,
   opponentsFor,
   rates,

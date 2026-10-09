@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { GameMode } from "snake-colyseus/engine";
-import { Brain, RosterEntry, brainDecider, brainProblems, roster } from "snake-colyseus/bots";
-import { MatchOptions, Player, playMatch } from "./match.ts";
+import { type GameMode } from "snake-colyseus/engine";
+import { type Brain, type RosterEntry, brainDecider, brainProblems, roster } from "snake-colyseus/bots";
+import { type MatchOptions, type Player, playMatch } from "./match.ts";
 
 /** The promotion bar: the share of its matches against the rookie at `BAR_DELAY`, both modes together, a candidate must win. */
 export const BAR = 0.6;

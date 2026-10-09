@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { Brain, Decider, brainDecider, encode, layerValues } from "snake-colyseus/bots";
-import { GameMode, directionMap } from "snake-colyseus/engine";
-import { Frame, MatchResult, playMatch } from "../match.ts";
+import { type Brain, type Decider, brainDecider, encode, layerValues } from "snake-colyseus/bots";
+import { type GameMode, directionMap } from "snake-colyseus/engine";
+import { type Frame, type MatchResult, playMatch } from "../match.ts";
 import { runFiles } from "../run.ts";
-import { Fixture, TrainSettings, drawGeneration, fixtureOptions } from "../train.ts";
+import { type Fixture, type TrainSettings, drawGeneration, fixtureOptions } from "../train.ts";
 
 /** The fixtures the grid can show: those against a population opponent are left out, as that population isn't on disk. */
 export const replayable = (fixtures: Fixture[]): Fixture[] => fixtures.filter(({ opponents }) => opponents.every((o) => "roster" in o));

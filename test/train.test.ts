@@ -5,15 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { mulberry32 } from "snake-colyseus/engine";
-import { Brain, brainProblems } from "snake-colyseus/bots";
+import { type Brain, brainProblems } from "snake-colyseus/bots";
+import { Pool } from "../src/pool.ts";
 import { loadCandidate } from "../src/gauntlet.ts";
-import { MatchResult } from "../src/match.ts";
+import { type MatchResult } from "../src/match.ts";
 import {
-  Checkpoint,
+  type Checkpoint,
   DEFAULT_SETTINGS,
-  TrainSettings,
+  type TrainSettings,
   breed,
   checkSettings,
+  evaluate,
   crossover,
   fixtures,
   gluttonFitness,
@@ -229,6 +231,20 @@ describe("train", () => {
       assert.deepEqual(log.map((l) => l.stage), ["alone", "rookie", "league"]);
       log.forEach((l) => assert.ok(Number.isFinite(l.best) && l.best >= l.mean));
       assert.deepEqual(brainProblems(best), []);
+    }
+  });
+
+  it("plays a generation through a pool of several workers as on this thread", async () => {
+    const population = brains(6);
+    const matches = fixtures(mulberry32(3), "rookie", short);
+    const here = population.map((brain) => evaluate(brain, matches, population, short));
+    for (const size of [2, 4]) {
+      const pool = new Pool(size);
+      try {
+        assert.deepEqual(await pool.fitness(population, matches, short), here);
+      } finally {
+        await pool.close();
+      }
     }
   });
 

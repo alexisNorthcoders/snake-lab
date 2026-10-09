@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Decider, ENCODER_SIZE, ENCODER_V2_SIZE, deciderFor, encode, encodeV2, pickBot } from "snake-colyseus/bots";
-import { MatchOptions, STRAIGHT, StepFacts, SteppedMatch, actionFor, directionFor, playMatch } from "../src/match.ts";
+import { type Decider, ENCODER_SIZE, ENCODER_V2_SIZE, deciderFor, encode, encodeV2, pickBot } from "snake-colyseus/bots";
+import { type MatchOptions, STRAIGHT, type StepFacts, SteppedMatch, actionFor, directionFor, playMatch } from "../src/match.ts";
 
 const rookie = pickBot("rookie");
 const dummy = pickBot("dummy");

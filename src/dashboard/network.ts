@@ -1,4 +1,4 @@
-import { Brain, INPUT_LABELS, OUTPUT_LABELS } from "snake-colyseus/bots";
+import { type Brain, INPUT_LABELS, OUTPUT_LABELS } from "snake-colyseus/bots";
 
 /** A network as the page draws it: one column of labelled nodes a layer, and an edge for every weight. */
 export interface NetworkLayout {

@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
-import { DiedEvent } from "snake-colyseus/engine";
-import { MatchEvent, MatchPlayer, playMatch } from "../match.ts";
+import { type DiedEvent } from "snake-colyseus/engine";
+import { type MatchEvent, type MatchPlayer, playMatch } from "../match.ts";
 import { exit, matchArgs, matchArgsHelp, matchOptions, orExit } from "./args.ts";
 
 const usage = `Plays one match and prints the result.

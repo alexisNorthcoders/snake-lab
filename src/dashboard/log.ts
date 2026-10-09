@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { GenerationLog } from "../train.ts";
+import { type GenerationLog } from "../train.ts";
 
 /** What a read found since the last one. */
 export type LogChange =

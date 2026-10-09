@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { FoodPlacement, layFood, mulberry32, roundTicks } from "snake-colyseus/engine";
-import { BotView, Decider, pickBot } from "snake-colyseus/bots";
-import { MatchOptions, Seat, playMatch } from "../src/match.ts";
+import { type FoodPlacement, layFood, mulberry32, roundTicks } from "snake-colyseus/engine";
+import { type BotView, type Decider, pickBot } from "snake-colyseus/bots";
+import { type MatchOptions, type Seat, playMatch } from "../src/match.ts";
 
 const rookie = pickBot("rookie");
 const dummy = pickBot("dummy");

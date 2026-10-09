@@ -1,8 +1,8 @@
 import { availableParallelism } from "node:os";
 import { performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
-import { Activation, Personality } from "snake-colyseus/bots";
-import { DEFAULT_SETTINGS, TrainSettings } from "../train.ts";
+import { type Activation, type Personality } from "snake-colyseus/bots";
+import { DEFAULT_SETTINGS, type TrainSettings } from "../train.ts";
 import { createRun, openRun, runFiles, trainRun } from "../run.ts";
 import { exit, orExit, parseNumber } from "./args.ts";
 
