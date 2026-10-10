@@ -1,6 +1,6 @@
 import { type GameMode } from "snake-colyseus/engine";
 import { roster } from "snake-colyseus/bots";
-import { loadCandidate } from "../gauntlet.ts";
+import { BAR, BAR_DELAY, loadCandidate } from "../gauntlet.ts";
 import { type MatchOptions, type Seat } from "../match.ts";
 
 const rosterIds = roster.map((entry) => entry.id).join(", ");
@@ -69,15 +69,17 @@ export const matchOptions = (args: { seed: string; players: string; delays: stri
 export const gauntletArgs = {
   seeds: { type: "string", default: "100" },
   "base-seed": { type: "string", default: "1" },
-  fps: { type: "string", default: "8" }
+  fps: { type: "string", default: "8" },
+  bar: { type: "string", default: String(BAR * 100) }
 } as const;
 
 export const gauntletArgsHelp = `  --seeds <n>       seeds per opponent, delay and mode, each played in both seats (default 100)
   --base-seed <n>   the first seed, a whole number in [0, 2^32) (default 1)
-  --fps <n>         ticks per second, which sets a timed round's length (default 8)`;
+  --fps <n>         ticks per second, which sets a timed round's length (default 8)
+  --bar <percent>   the share of matches against the rookie at delay ${BAR_DELAY} a pass needs (default ${BAR * 100})`;
 
 /** The gauntlet's settings from the shared options. Throws, saying why, on one that can't be used. */
-export function gauntletSettings(values: { seeds: string; "base-seed": string; fps: string }) {
+export function gauntletSettings(values: { seeds: string; "base-seed": string; fps: string; bar: string }) {
   const seeds = parseNumber("seeds", values.seeds);
   if (!Number.isInteger(seeds) || seeds < 1) throw new Error(`--seeds must be a whole number above 0, not ${seeds}`);
   const baseSeed = parseNumber("base-seed", values["base-seed"]);
@@ -86,5 +88,7 @@ export function gauntletSettings(values: { seeds: string; "base-seed": string; f
   }
   const fps = parseNumber("fps", values.fps);
   if (fps <= 0) throw new Error(`--fps must be above 0, not ${fps}`);
-  return { seeds, baseSeed, fps };
+  const bar = parseNumber("bar", values.bar);
+  if (bar < 0 || bar > 100) throw new Error(`--bar must be a percentage from 0 to 100, not ${bar}`);
+  return { seeds, baseSeed, fps, bar: bar / 100 };
 }

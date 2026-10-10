@@ -127,19 +127,19 @@ export function runGauntlet(options: GauntletOptions): GauntletReport {
 export const rates = ({ matches, wins, losses, draws }: GauntletCell) =>
   ({ win: wins / matches, loss: losses / matches, draw: draws / matches });
 
-/** Pass or fail against the bar. With no matches against the rookie at the bar's delay, it fails. */
-export function verdict(report: GauntletReport): Verdict {
+/** Pass or fail against the bar (`BAR` unless given). With no matches against the rookie at the bar's delay, it fails. */
+export function verdict(report: GauntletReport, bar = BAR): Verdict {
   const counted = report.cells.filter((c) => c.opponent === BAR_OPPONENT && c.delay === BAR_DELAY);
   const matches = counted.reduce((sum, c) => sum + c.matches, 0);
   const wins = counted.reduce((sum, c) => sum + c.wins, 0);
   const winRate = matches === 0 ? 0 : wins / matches;
-  return { bar: BAR, winRate, matches, pass: matches > 0 && winRate >= BAR };
+  return { bar, winRate, matches, pass: matches > 0 && winRate >= bar };
 }
 
 const percent = (rate: number) => `${(rate * 100).toFixed(1)}%`.padStart(6);
 
 /** The report as the `gauntlet` command prints it: the table, the bar and the verdict. `seconds` adds how long it took. */
-export function formatReport(report: GauntletReport, opponents: RosterEntry[], seconds?: number): string {
+export function formatReport(report: GauntletReport, opponents: RosterEntry[], seconds?: number, barRate = BAR): string {
   const nameOf = new Map(opponents.map((e) => [e.id, e.name]));
   const row = (c: GauntletCell) => {
     const { win, loss, draw } = rates(c);
@@ -147,7 +147,7 @@ export function formatReport(report: GauntletReport, opponents: RosterEntry[], s
       `${percent(win)}  ${percent(loss)}  ${percent(draw)}`;
   };
   const matches = report.cells.reduce((sum, c) => sum + c.matches, 0);
-  const { bar, winRate, pass } = verdict(report);
+  const { bar, winRate, pass } = verdict(report, barRate);
   return [
     `${report.candidate}: seeds ${report.baseSeed} to ${report.baseSeed + report.seeds - 1}, each in both seats, at ${report.fps} fps`,
     `${matches} matches${seconds === undefined ? "" : ` in ${seconds.toFixed(1)}s`}\n`,

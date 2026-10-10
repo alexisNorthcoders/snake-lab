@@ -32,5 +32,5 @@ const start = performance.now();
 const report = runGauntlet({ candidate: run.candidate.player, opponents, baseSeed: run.baseSeed, seeds: run.seeds, fps: run.fps });
 const seconds = (performance.now() - start) / 1000;
 
-console.log(formatReport(report, opponents, seconds));
-process.exit(verdict(report).pass ? 0 : 1);
+console.log(formatReport(report, opponents, seconds, run.bar));
+process.exit(verdict(report, run.bar).pass ? 0 : 1);

@@ -31,7 +31,8 @@ The gauntlet decides whether a snake is good enough to join the roster. It plays
 in both modes. Each seed is played twice, once with the candidate in each seat, and both snakes
 play at the same delay. It prints the win, loss and draw rates for each opponent, delay and mode.
 A draw counts as not winning. It passes a candidate that wins at least 60% of its matches against
-the rookie at delay 2, over both modes, and exits 0 on a pass and 1 on a fail. `--seeds` (default
+the rookie at delay 2, over both modes, and exits 0 on a pass and 1 on a fail. `--bar` sets another
+share (`--bar 20` for 20%), for a snake meant to be easy. `--seeds` (default
 100 per cell), `--base-seed` (default 1) and `--fps` (default 8) change the run, and the same
 options always give the same report. The first numbers are in
 [`docs/benchmarks/`](docs/benchmarks/2026-09-28-first-gauntlet.md).
@@ -71,8 +72,8 @@ trained for now. `AGENTS.md` describes running a long job in the background.
 npm run promote -- runs/glutton-1 50 --name "Nimble Pete" [--target ../snake-colyseus]
 ```
 
-This puts generation 50's best brain through the gauntlet (`--seeds`, `--base-seed` and `--fps`
-work as there). If it passes, it writes the brain and a roster entry into the `snake-colyseus`
+This puts generation 50's best brain through the gauntlet (`--seeds`, `--base-seed`, `--fps` and
+`--bar` work as there; a lower bar shows in the PR description's table and command). If it passes, it writes the brain and a roster entry into the `snake-colyseus`
 checkout, bumps that repo's `engineVersion` by a minor version, and prints a PR description with
 the training settings, the gauntlet's table and verdict, the command and the engine tag; it's saved
 in the run folder as `promote-<id>.md`. If it fails, or the name or its id is already in the

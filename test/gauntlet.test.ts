@@ -110,6 +110,13 @@ describe("verdict", () => {
     assert.equal(v.pass, false);
   });
 
+  it("takes a lower bar", () => {
+    const v = verdict(report([cell({ matches: 100, wins: 20, losses: 80 })]), 0.2);
+    assert.equal(v.bar, 0.2);
+    assert.equal(v.pass, true);
+    assert.equal(verdict(report([cell({ matches: 100, wins: 19, losses: 81 })]), 0.2).pass, false);
+  });
+
   it("only counts the rookie at delay 2", () => {
     const v = verdict(report([
       cell({ matches: 100, wins: 10, losses: 90 }),

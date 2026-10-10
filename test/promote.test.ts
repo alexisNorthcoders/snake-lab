@@ -130,6 +130,14 @@ describe("promote", () => {
     assert.deepEqual([snapshot(run), snapshot(target)], before);
   });
 
+  it("passes a snake against a lower bar, and says so in the table and the command", () => {
+    const run = newRun();
+    const { promotion, table } = promote({ ...base(run, newCheckout()), bar: 0.2, gauntlet: standIn(3) });
+    assert.match(table, /win at least 20\.0%/);
+    assert.match(table, /won 30\.0%: PASS/);
+    assert.match(promotion!.description, /--fps 8 --bar 20\n/);
+  });
+
   const refused = (why: RegExp, run: string, target: string, extra: Partial<Parameters<typeof promote>[0]> = {}) => {
     const before = [snapshot(run), snapshot(target)];
     assert.throws(() => promote({ ...base(run, target), gauntlet: standIn(10), ...extra }), why);

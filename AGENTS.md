@@ -25,8 +25,8 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `src/env.ts`: the engine as an environment. `Env` (many `SteppedMatch`es, one batch of actions in and observations and facts out; a match that ends restarts on a seed drawn from the batch's), the wire codec (`encodeFrame`, `FrameReader`) and `EnvSession`. `src/cli/env.ts` runs it over stdin and stdout; the protocol (frames, messages, byte layout, facts) is in `docs/env-protocol.md`, which the Python trainer reads. Rewards are never computed here.
 - `src/gauntlet.ts`: the gauntlet. `loadCandidate` (roster id or brain file), `opponentsFor`,
   `runGauntlet` (the grid of opponent × delay 0-4 × mode, N seeds each played in both seats) and
-  `verdict` (the bar: at least 60% of matches won against the rookie at delay 2, both modes; draws
-  count as not winning). `promote` uses it. `formatReport` prints a report.
+  `verdict` (the bar: by default at least 60% of matches won against the rookie at delay 2, both modes; draws
+  count as not winning; `--bar` sets another). `promote` uses it. `formatReport` prints a report.
 - `src/train.ts`: the neuroevolution trainer. `train` (the whole run, or the rest of one from a
   `Checkpoint`), and its parts: `randomBrain`, `crossover`, `mutate`, `breed`, `fixtures` (a
   generation's matches), `evaluate`, `survivorFitness`, `hunterFitness`, `kills`, `gluttonFitness`. A genome is a brain in `snake-colyseus/bots`'

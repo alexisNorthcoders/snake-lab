@@ -2,7 +2,7 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "nod
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Brain, brainDecider, brainProblems, loadRoster, roster } from "snake-colyseus/bots";
-import { type GauntletOptions, type GauntletReport, type Verdict, formatReport, opponentsFor, runGauntlet, verdict } from "./gauntlet.ts";
+import { BAR, type GauntletOptions, type GauntletReport, type Verdict, formatReport, opponentsFor, runGauntlet, verdict } from "./gauntlet.ts";
 import { runFiles } from "./run.ts";
 import { type TrainSettings } from "./train.ts";
 
@@ -21,6 +21,8 @@ export interface PromoteOptions {
   seeds: number;
   baseSeed: number;
   fps: number;
+  /** The share of matches against the rookie a pass needs (default `BAR`). */
+  bar?: number;
   /** Plays the gauntlet: `runGauntlet`, unless a test stands in for it. */
   gauntlet?: (options: GauntletOptions) => GauntletReport;
 }
@@ -87,7 +89,8 @@ function openTarget(target: string) {
 
 /** The command that reproduces the gauntlet's numbers. */
 const commandFor = (o: PromoteOptions) =>
-  `npm run promote -- ${o.run} ${o.generation} --name ${JSON.stringify(o.name)} --seeds ${o.seeds} --base-seed ${o.baseSeed} --fps ${o.fps}`;
+  `npm run promote -- ${o.run} ${o.generation} --name ${JSON.stringify(o.name)} --seeds ${o.seeds} --base-seed ${o.baseSeed} --fps ${o.fps}` +
+    (o.bar === undefined || o.bar === BAR ? "" : ` --bar ${Number((o.bar * 100).toFixed(4))}`);
 
 /** How a run was trained: the neuroevolution trainer's settings have no `method`; the PPO trainer's say `ppo`. */
 const methodOf = (settings: TrainSettings): string => (settings as { method?: string }).method ?? "neuroevolution";
@@ -161,8 +164,8 @@ export function promote(options: PromoteOptions): PromoteResult {
     seeds: options.seeds,
     fps: options.fps
   });
-  const table = formatReport(report, opponents);
-  const result = verdict(report);
+  const table = formatReport(report, opponents, undefined, options.bar);
+  const result = verdict(report, options.bar);
   if (!result.pass) return { id, report, verdict: result, table };
 
   const entry = { id, name, personality: settings.personality, generation, method: methodOf(settings), brain: `${id}.json` };
