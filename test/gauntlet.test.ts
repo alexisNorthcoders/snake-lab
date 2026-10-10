@@ -130,7 +130,7 @@ describe("verdict", () => {
 
 describe("opponentsFor", () => {
   it("is the rookie first, then every roster entry but the candidate", () => {
-    assert.deepEqual(opponentsFor("dummy").map((e) => e.id), ["rookie"]);
+    assert.deepEqual(opponentsFor("dummy").map((e) => e.id), roster.map((e) => e.id).filter((id) => id !== "dummy"));
     assert.deepEqual(opponentsFor(undefined).map((e) => e.id), roster.map((e) => e.id));
   });
 
