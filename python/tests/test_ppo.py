@@ -98,6 +98,20 @@ def test_glutton_reward_adds_the_win_bonus_on_the_winning_tick_only():
     assert REWARDS["glutton"](f, {"food_weight": 1.0, "tick_bonus": 0.1, "glutton_win_bonus": 200.0}).tolist()[1] == pytest.approx(200.1)
 
 
+def test_glutton_reward_penalises_a_draw_and_a_loss_on_the_last_tick_only():
+    # still going, won, lost (dead), drawn alive, drawn dead
+    f = facts(alive=[1, 1, 0, 1, 0], ended=[0, 1, 1, 1, 1], outcome=[0, 1, 2, 3, 3])
+    got = glutton_reward(f, win_bonus=200, draw_penalty=100, loss_penalty=150).tolist()
+    assert got == pytest.approx([0.1, 200.1, -150.0, -99.9, -100.0])
+
+
+def test_the_glutton_has_no_draw_or_loss_penalty_alone():
+    f = facts(alive=[1, 0], ended=[1, 1], outcome=[3, 2])
+    s = {"food_weight": 1.0, "tick_bonus": 0.1, "glutton_win_bonus": 200.0, "glutton_draw_penalty": 100.0, "glutton_loss_penalty": 150.0}
+    assert REWARDS["glutton"](f, s).tolist() == pytest.approx([-99.9, -150.0])
+    assert REWARDS["glutton"](f, {**s, "alone": True}).tolist() == pytest.approx([0.1, 0.0])
+
+
 def test_rewards_are_chosen_by_personality_with_the_settings_weights():
     settings = {"food_weight": 3.0, "tick_bonus": 0.5}
     assert REWARDS["glutton"](facts(scoreGained=[1], alive=[1]), settings).tolist() == [3.5]
@@ -321,3 +335,14 @@ def test_a_run_saved_before_the_win_bonus_reads_it_as_0():
     old = {k: v for k, v in Settings().to_json().items() if k != "glutton_win_bonus"}
     assert Settings.from_json(old).glutton_win_bonus == 0.0
     assert Settings.from_json(Settings().to_json()).glutton_win_bonus == 200.0
+
+
+def test_a_run_saved_before_the_draw_and_loss_penalties_reads_them_as_0():
+    old = {k: v for k, v in Settings().to_json().items() if k not in ("glutton_draw_penalty", "glutton_loss_penalty")}
+    settings = Settings.from_json(old)
+    assert (settings.glutton_draw_penalty, settings.glutton_loss_penalty) == (0.0, 0.0)
+
+
+def test_a_loss_penalty_below_the_draw_penalty_is_refused():
+    with pytest.raises(ValueError, match="dying beats drawing"):
+        Settings(glutton_draw_penalty=100.0, glutton_loss_penalty=50.0).check()

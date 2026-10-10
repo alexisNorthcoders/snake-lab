@@ -56,10 +56,13 @@ class Settings:
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
-    # Glutton reward: food score gained, a bonus a tick alive, and a bonus for winning
+    # Glutton reward: food score gained, a bonus a tick alive, a bonus for winning, and penalties for a draw or a loss
+    # (not alone); keep the loss penalty at least the draw one, or dying beats drawing
     food_weight: float = 1.0
     tick_bonus: float = 0.1
     glutton_win_bonus: float = 200.0
+    glutton_draw_penalty: float = 100.0
+    glutton_loss_penalty: float = 150.0
     # Survivor reward: a bonus a tick alive, and a bonus for winning
     alive_weight: float = 0.1
     survivor_win_bonus: float = 10.0
@@ -72,6 +75,8 @@ class Settings:
     def check(self) -> None:
         if self.personality not in REWARDS:
             raise ValueError(f"personality must be one of {sorted(REWARDS)}, not {self.personality!r}")
+        if self.glutton_loss_penalty < self.glutton_draw_penalty:
+            raise ValueError("glutton_loss_penalty must be at least glutton_draw_penalty, or dying beats drawing")
         if self.encoder not in ENCODER_SIZES:
             raise ValueError("encoder must be 1 or 2")
         if not 0 <= self.seed < 2**32:
@@ -117,7 +122,9 @@ class Settings:
     def from_json(cls, data: dict) -> "Settings":
         known = {f.name for f in fields(cls)}
         picked = {k: v for k, v in data.items() if k in known}
-        picked.setdefault("glutton_win_bonus", 0.0)  # a run saved before the win bonus trained without one
+        # A run saved before a term existed trained without it.
+        for term in ("glutton_win_bonus", "glutton_draw_penalty", "glutton_loss_penalty"):
+            picked.setdefault(term, 0.0)
         if "hidden" in picked:
             picked["hidden"] = tuple(picked["hidden"])
         return cls(**picked)
@@ -208,7 +215,8 @@ def train(run: Path, settings: Settings, *, stop=lambda: False, echo=lambda text
     log = read_log(files["log"])[:start]
     _write_whole(files["log"], "".join(json.dumps(line) + "\n" for line in log))
 
-    reward_fn = lambda facts: REWARDS[settings.personality](facts, asdict(settings))  # noqa: E731
+    reward_settings = asdict(settings)  # plus `alone`, set as each stage starts
+    reward_fn = lambda facts: REWARDS[settings.personality](facts, reward_settings)  # noqa: E731
     generator = torch.Generator()
     env, env_stage = None, None
     roster: list[str] = []
@@ -221,6 +229,7 @@ def train(run: Path, settings: Settings, *, stop=lambda: False, echo=lambda text
                 if env is not None:
                     env.close()
                 env, env_stage = make_env(settings, stage), stage
+                reward_settings["alone"] = stage == "alone"
             if stage == "league":
                 roster = roster or roster_ids()
                 league_rng = np.random.default_rng([settings.seed, checkpoint])

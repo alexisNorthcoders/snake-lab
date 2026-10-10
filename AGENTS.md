@@ -105,7 +105,7 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 
 `--help` lists every setting. `--personality` is `glutton`, `survivor` or `hunter`; a personality is a function in `REWARDS` (`rewards.py`) from the step facts to a reward, with every weight a setting (table below):
 
-- **Glutton:** food score gained × `food_weight`, plus `tick_bonus` a tick alive, plus `glutton_win_bonus` on the tick it wins.
+- **Glutton:** food score gained × `food_weight`, plus `tick_bonus` a tick alive, plus `glutton_win_bonus` on the tick it wins, minus `glutton_draw_penalty` or `glutton_loss_penalty` on the tick it draws or loses (not in the alone stage, where every round is a draw or a loss). The loss penalty must be at least the draw one, or a snake heading for a draw learns to die instead.
 - **Survivor:** `alive_weight` a tick alive, plus `survivor_win_bonus` on the tick the round ends with the learner winning.
 - **Hunter:** `kill_bonus` a kill, plus `hunter_win_bonus` for a win, plus `food_bonus` × food score gained. Kills are the engine's fact, by the lab's rule: a head-on collision is a kill for neither.
 
@@ -130,7 +130,7 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 | `learning_rate`, `gamma`, `gae_lambda` | 3e-4, 0.99, 0.95 | Adam step, discount, advantage fade |
 | `epochs`, `minibatches` | 4, 4 | passes over a rollout and the minibatches each is cut into |
 | `clip`, `vf_coef`, `ent_coef`, `max_grad_norm` | 0.2, 0.5, 0.01, 0.5 | the surrogate's clip, the value loss's and entropy bonus's weights, gradient clip |
-| `food_weight`, `tick_bonus`, `glutton_win_bonus` | 1, 0.1, 200 | Glutton reward per tick: score gained × `food_weight` + `tick_bonus` while alive, + `glutton_win_bonus` on the tick it wins. A run saved before the win bonus reads it as 0 |
+| `food_weight`, `tick_bonus`, `glutton_win_bonus`, `glutton_draw_penalty`, `glutton_loss_penalty` | 1, 0.1, 200, 100, 150 | Glutton reward per tick: score gained × `food_weight` + `tick_bonus` while alive, + `glutton_win_bonus` on the tick it wins, − a penalty on the tick it draws or loses (not alone). A run saved before a term reads it as 0 |
 | `alive_weight`, `survivor_win_bonus` | 0.1, 10 | Survivor reward: `alive_weight` per tick alive, and the win bonus on the last tick of a win |
 | `kill_bonus`, `hunter_win_bonus`, `food_bonus` | 10, 5, 0.01 | Hunter reward: per kill, for a win, and per point of food score gained |
 | `threads` | 1 | torch's threads |
