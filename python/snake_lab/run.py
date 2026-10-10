@@ -56,9 +56,10 @@ class Settings:
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
-    # Glutton reward: food score gained, and a bonus a tick alive
+    # Glutton reward: food score gained, a bonus a tick alive, and a bonus for winning
     food_weight: float = 1.0
     tick_bonus: float = 0.1
+    glutton_win_bonus: float = 200.0
     # Survivor reward: a bonus a tick alive, and a bonus for winning
     alive_weight: float = 0.1
     survivor_win_bonus: float = 10.0
@@ -116,6 +117,7 @@ class Settings:
     def from_json(cls, data: dict) -> "Settings":
         known = {f.name for f in fields(cls)}
         picked = {k: v for k, v in data.items() if k in known}
+        picked.setdefault("glutton_win_bonus", 0.0)  # a run saved before the win bonus trained without one
         if "hidden" in picked:
             picked["hidden"] = tuple(picked["hidden"])
         return cls(**picked)

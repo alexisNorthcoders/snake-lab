@@ -80,7 +80,7 @@ def test_ppo_loss_clipping_stops_the_gradient():
 
 def facts(**fields):
     n = len(next(iter(fields.values())))
-    base = {"scoreGained": [0] * n, "alive": [1] * n}
+    base = {"scoreGained": [0] * n, "alive": [1] * n, "ended": [0] * n, "outcome": [0] * n}
     return {k: np.array(v, dtype=np.int32) for k, v in {**base, **fields}.items()}
 
 
@@ -89,6 +89,13 @@ def test_glutton_reward_from_facts():
     assert glutton_reward(f).tolist() == pytest.approx([0.1, 10.1, 20.0, -4.9, 0.0])
     assert glutton_reward(f, food_weight=2, tick_bonus=0).tolist() == pytest.approx([0, 20, 40, -10, 0])
     assert glutton_reward(f).dtype == np.float32
+
+
+def test_glutton_reward_adds_the_win_bonus_on_the_winning_tick_only():
+    # a win on the last tick adds the bonus; a loss, a draw or a round still going add nothing
+    f = facts(alive=[1, 1, 0, 1, 1], ended=[0, 1, 1, 1, 1], outcome=[0, 1, 2, 3, 1])
+    assert glutton_reward(f, win_bonus=200).tolist() == pytest.approx([0.1, 200.1, 0.0, 0.1, 200.1])
+    assert REWARDS["glutton"](f, {"food_weight": 1.0, "tick_bonus": 0.1, "glutton_win_bonus": 200.0}).tolist()[1] == pytest.approx(200.1)
 
 
 def test_rewards_are_chosen_by_personality_with_the_settings_weights():
@@ -308,3 +315,9 @@ def test_resume_can_add_a_league(tmp_path):
     settings = open_run(run, league_updates=2)
     assert settings.checkpoints == 4 and settings.stage(3) == "league"
     assert json.loads(run_files(run)["settings"].read_text())["leagueGenerations"] == 2
+
+
+def test_a_run_saved_before_the_win_bonus_reads_it_as_0():
+    old = {k: v for k, v in Settings().to_json().items() if k != "glutton_win_bonus"}
+    assert Settings.from_json(old).glutton_win_bonus == 0.0
+    assert Settings.from_json(Settings().to_json()).glutton_win_bonus == 200.0
