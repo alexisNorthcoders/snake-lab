@@ -74,7 +74,7 @@ npm run promote -- runs/glutton-1 50 --name "Nimble Pete" [--target ../snake-col
 
 This puts generation 50's best brain through the gauntlet (`--seeds`, `--base-seed`, `--fps` and
 `--bar` work as there; a lower bar shows in the PR description's table and command). If it passes, it writes the brain and a roster entry into the `snake-colyseus`
-checkout, bumps that repo's `engineVersion` by a minor version, and prints a PR description with
+checkout, bumps that repo's `engineVersion` by a patch version, and prints a PR description with
 the training settings, the gauntlet's table and verdict, the command and the engine tag; it's saved
 in the run folder as `promote-<id>.md`. If it fails, or the name or its id is already in the
 roster, or the target isn't a `snake-colyseus` checkout, or the generation's brain is missing,

@@ -3,7 +3,7 @@ import { DEFAULT_TARGET, promote } from "../promote.ts";
 import { exit, gauntletArgs, gauntletArgsHelp, gauntletSettings, orExit, parseNumber } from "./args.ts";
 
 const usage = `Puts a generation of a training run through the gauntlet and, if it passes, writes its brain and
-roster entry into a snake-colyseus checkout, bumps that checkout's engineVersion by a minor version,
+roster entry into a snake-colyseus checkout, bumps that checkout's engineVersion by a patch version,
 and prints a PR description (saved in the run folder as promote-<id>.md). If it fails, or the id or
 name is taken, or the target or the checkpoint can't be used, nothing is written and it exits 1.
 It never runs git: branch, commit and open the PR yourself.

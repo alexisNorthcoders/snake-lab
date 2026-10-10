@@ -35,7 +35,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
   snake a job, each fitness put back in the snake's place.
 - `src/run.ts`: the run folder. `createRun`, `trainRun` (from generation 0 or the latest
   checkpoint), `saveGeneration` (write then rename, the checkpoint last) and `runFiles`.
-- `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpMinor`.
+- `src/promote.ts`: `promote` (a generation through the gauntlet, then into a `snake-colyseus` checkout), `slug`, `bumpPatch`.
 - `src/dashboard/`: the training dashboard. `replay.ts` (the grid's games: `sampleFixtures`, `gameStream`, `readGenerationBest`), `network.ts` (`networkLayout`: a brain's columns, labels and edges), `log.ts` (`LogReader`: reads a run's `log.jsonl`, whole lines only, and reports an append or, after a resume rewrote lines, a reset), `server.ts` (`startDashboard`: Node's http server, the page, `/api/run`, `/events` and `/games` as Server-Sent Events) and `page.html` (plain HTML, CSS and JS, the chart hand-drawn in SVG). It only reads the run folder.
 - `python/`: the Python half, its own project (`pyproject.toml`, `snake_lab/`, `tests/`). `snake_lab/env.py`: `SnakeVectorEnv`, a Gymnasium `VectorEnv` that starts `node --import tsx src/cli/env.ts` and drives its matches as a batch (reset with a seed, step with an array of 0/1/2 actions; rewards are 0, the facts are in `infos` by field name, a match that ends is `terminated`, or `truncated` on time-up, and its observation is already the next match's). Engine errors raise `EnvError`, a dead subprocess `EnvProcessError`; `close()` stops the process. `protocol.py` is the wire codec, `bench.py` the throughput benchmark. It reads only `docs/env-protocol.md`. `ppo.py` is the PPO (network, `compute_gae`, `ppo_loss`, `collect`, `update`), `rewards.py` the rewards from step facts (`REWARDS`, by personality: glutton, survivor, hunter), `league.py` who the league stage meets, `brain.py` `export_brain`, `run.py` the settings, run folder, training loop and `python -m snake_lab.run` CLI. `tests/brain_check.ts` asks the package to validate and run an exported brain.
 - `src/cli/`: the `match`, `bench`, `gauntlet`, `train`, `promote` and `dashboard` commands (and `roster.ts`, which prints the roster's ids for the Python league), and the options they share.
@@ -70,7 +70,7 @@ with `node:util`'s `parseArgs`. Keep dependencies few.
 - `npm run promote -- runs/glutton-1 50 --name "Nimble Pete"`: puts that generation's brain through
   the gauntlet (`--seeds`, `--base-seed`, `--fps` as there). On a pass it writes `brains/<id>.json`
   and `entries/<id>.json` under `src/bots/` in the `snake-colyseus` checkout (`--target`, default
-  `../snake-colyseus`), bumps its `engineVersion` by a minor version, prints a PR description and
+  `../snake-colyseus`), bumps its `engineVersion` by a patch version, prints a PR description and
   saves it as `promote-<id>.md` in the run folder. On a fail it prints the table and the verdict,
   exits 1 and writes nothing. It also refuses, writing nothing, when the id (a slug of the name) or
   the name is in the target's roster, the target isn't a `snake-colyseus` checkout, or the

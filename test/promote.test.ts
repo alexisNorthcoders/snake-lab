@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { loadRoster } from "snake-colyseus/bots";
 import { mulberry32 } from "snake-colyseus/engine";
 import { type GauntletOptions, type GauntletReport } from "../src/gauntlet.ts";
-import { bumpMinor, promote, slug } from "../src/promote.ts";
+import { bumpPatch, promote, slug } from "../src/promote.ts";
 import { createRun, runFiles } from "../src/run.ts";
 import { DEFAULT_SETTINGS, type TrainSettings, randomBrain } from "../src/train.ts";
 
@@ -52,21 +52,21 @@ const standIn = (wins: number, matches = 10) => (o: GauntletOptions): GauntletRe
 
 const base = (run: string, target: string) => ({ run, generation: 3, name: "Nimble Pete", target, seeds: 5, baseSeed: 1, fps: 8 });
 
-describe("slug and bumpMinor", () => {
+describe("slug and bumpPatch", () => {
   it("makes an id from a name", () => {
     assert.equal(slug("Nimble Pete"), "nimble-pete");
     assert.equal(slug("  Zoë_2! "), "zoe-2");
     assert.equal(slug("!!!"), "");
   });
 
-  it("bumps the minor version and resets the patch", () => {
-    assert.equal(bumpMinor("4.0.3"), "4.1.0");
-    assert.throws(() => bumpMinor("4.0"), /isn't x\.y\.z/);
+  it("bumps the patch version", () => {
+    assert.equal(bumpPatch("4.0.3"), "4.0.4");
+    assert.throws(() => bumpPatch("4.0"), /isn't x\.y\.z/);
   });
 });
 
 describe("promote", () => {
-  it("writes a brain and an entry the package's roster loader reads, and bumps engineVersion by a minor", () => {
+  it("writes a brain and an entry the package's roster loader reads, and bumps engineVersion by a patch", () => {
     const run = newRun();
     const target = newCheckout();
     const result = promote({ ...base(run, target), gauntlet: standIn(8) });
@@ -83,7 +83,7 @@ describe("promote", () => {
       { name: "Nimble Pete", personality: "glutton", generation: 3, method: "neuroevolution" }
     );
     assert.deepEqual(entry.brain, JSON.parse(readFileSync(runFiles(run).generation(3), "utf8")));
-    assert.equal(JSON.parse(readFileSync(join(target, "package.json"), "utf8")).engineVersion, "4.1.0");
+    assert.equal(JSON.parse(readFileSync(join(target, "package.json"), "utf8")).engineVersion, "4.0.1");
     assert.ok(existsSync(join(run, "promote-nimble-pete.md")));
   });
 
@@ -101,7 +101,7 @@ describe("promote", () => {
     const entry = loaded.find((e) => e.id === "nimble-pete");
     assert.ok(entry && entry.kind === "brain");
     assert.deepEqual({ personality: entry.personality, generation: entry.generation, method: entry.method }, { personality: "hunter", generation: 3, method: "ppo" });
-    assert.equal(JSON.parse(readFileSync(join(target, "package.json"), "utf8")).engineVersion, "4.1.0");
+    assert.equal(JSON.parse(readFileSync(join(target, "package.json"), "utf8")).engineVersion, "4.0.1");
     assert.match(promotion.description, /\(ppo, seed 3\)/);
   });
 

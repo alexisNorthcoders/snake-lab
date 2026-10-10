@@ -41,11 +41,14 @@ export interface PromoteResult {
 export const slug = (name: string) =>
   name.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
-/** `version` with its minor part up by one and its patch reset. Throws on anything but `x.y.z`. */
-export function bumpMinor(version: string): string {
-  const match = /^(\d+)\.(\d+)\.\d+$/.exec(version);
+/**
+ * `version` with its patch part up by one: snake-colyseus counts a new roster
+ * snake as a patch, since it adds no export. Throws on anything but `x.y.z`.
+ */
+export function bumpPatch(version: string): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
   if (!match) throw new Error(`engineVersion "${version}" isn't x.y.z: can't bump it`);
-  return `${match[1]}.${Number(match[2]) + 1}.0`;
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
 }
 
 /** The engine tag the lab is installed at, read from the installed package. */
@@ -125,7 +128,7 @@ function describePromotion(o: PromoteOptions, id: string, settings: TrainSetting
 
 /**
  * Puts a generation's fittest through the gauntlet and, if it passes, adds it
- * to a snake-colyseus checkout: its brain, its roster entry, and a minor bump
+ * to a snake-colyseus checkout: its brain, its roster entry, and a patch bump
  * of `engineVersion`. Throws, writing nothing, when the id or name is taken,
  * the target isn't a checkout or the checkpoint can't be used. On a fail it
  * writes nothing either. It never runs git.
@@ -151,7 +154,7 @@ export function promote(options: PromoteOptions): PromoteResult {
   if (taken.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
     throw new Error(`the name "${name}" is taken in ${target}'s roster: pick another`);
   }
-  const nextVersion = bumpMinor(checkout.engineVersion);
+  const nextVersion = bumpPatch(checkout.engineVersion);
   const packageText = readFileSync(checkout.packagePath, "utf8");
   const bumped = packageText.replace(/("engineVersion"\s*:\s*")[^"]*(")/, `$1${nextVersion}$2`);
   if (bumped === packageText) throw new Error(`couldn't find engineVersion in ${checkout.packagePath} to bump`);
