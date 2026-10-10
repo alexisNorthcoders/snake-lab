@@ -37,6 +37,7 @@ Usage: npm run train -- --personality glutton --run <folder> [options]
   --fps <n>              ticks per second, which sets a timed round's length (default ${defaults.fps})
   --food-weight <w>      fitness per point of food score (default ${defaults.foodWeight})
   --tick-bonus <w>       glutton fitness per tick survived (default ${defaults.tickBonus})
+  --glutton-win-bonus <w>  glutton fitness for a win (default ${defaults.gluttonWinBonus})
   --alive-weight <w>     survivor fitness per tick alive (default ${defaults.aliveWeight})
   --survivor-win-bonus <w>  survivor fitness for a win (default ${defaults.survivorWinBonus})
   --kill-bonus <w>       hunter fitness per kill (default ${defaults.killBonus})
@@ -63,6 +64,7 @@ const options = {
   fps: { type: "string", default: String(defaults.fps) },
   "food-weight": { type: "string", default: String(defaults.foodWeight) },
   "tick-bonus": { type: "string", default: String(defaults.tickBonus) },
+  "glutton-win-bonus": { type: "string", default: String(defaults.gluttonWinBonus) },
   "alive-weight": { type: "string", default: String(defaults.aliveWeight) },
   "survivor-win-bonus": { type: "string", default: String(defaults.survivorWinBonus) },
   "kill-bonus": { type: "string", default: String(defaults.killBonus) },
@@ -111,6 +113,7 @@ const { run, workers, generations } = orExit(usage, () => {
     fps: number("fps"),
     foodWeight: number("food-weight"),
     tickBonus: number("tick-bonus"),
+    gluttonWinBonus: number("glutton-win-bonus"),
     aliveWeight: number("alive-weight"),
     survivorWinBonus: number("survivor-win-bonus"),
     killBonus: number("kill-bonus"),

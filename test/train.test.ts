@@ -94,12 +94,21 @@ describe("gluttonFitness", () => {
   it("is the food score plus a bonus a tick survived, averaged over the snake's matches", () => {
     const died = match({ events: [{ kind: "died", player: "seat1", cause: "wall", tick: 100 } as never] });
     const lived = match({ ticks: 200, players: [player("seat0", 0), player("seat1", 70)] });
-    const weights = { foodWeight: 2, tickBonus: 0.5 };
+    const weights = { foodWeight: 2, tickBonus: 0.5, gluttonWinBonus: 0 };
     // seat 1: died on tick 100 with 40, then lived all 200 ticks with 70.
     assert.equal(gluttonFitness([{ match: died, seat: 1 }, { match: lived, seat: 1 }], weights),
       ((2 * 40 + 0.5 * 100) + (2 * 70 + 0.5 * 200)) / 2);
     // seat 0 lived the whole 300 ticks.
     assert.equal(gluttonFitness([{ match: died, seat: 0 }], weights), 2 * 120 + 0.5 * 300);
+  });
+
+  it("adds the win bonus for a match the snake won, and none for a loss or a draw", () => {
+    const won = match({ result: { reason: "last-standing", winnerId: "seat0" } });
+    const lost = match({ result: { reason: "last-standing", winnerId: "seat1" } });
+    const drawn = match({});
+    const weights = { foodWeight: 1, tickBonus: 0, gluttonWinBonus: 200 };
+    assert.equal(gluttonFitness([{ match: won, seat: 0 }, { match: lost, seat: 0 }, { match: drawn, seat: 0 }], weights),
+      ((120 + 200) + 120 + 120) / 3);
   });
 });
 

@@ -67,9 +67,13 @@ function readCheckpoint(path: string, settings: TrainSettings): Checkpoint {
   return checkpoint;
 }
 
-/** Saved settings as a run reads them: a run from before the league stays in the rookie stage to its end, and gets the defaults of the settings it lacks. */
+/**
+ * Saved settings as a run reads them: a run from before the league stays in the rookie stage to its end, one from
+ * before the Glutton's win bonus has none (so it resumes as it was trained), and either gets the defaults of the
+ * settings it lacks.
+ */
 export const withDefaults = (saved: Partial<TrainSettings> & { generations: number; aloneGenerations: number }): TrainSettings =>
-  ({ ...DEFAULT_SETTINGS, rookieGenerations: saved.generations - saved.aloneGenerations, ...saved }) as TrainSettings;
+  ({ ...DEFAULT_SETTINGS, rookieGenerations: saved.generations - saved.aloneGenerations, gluttonWinBonus: 0, ...saved }) as TrainSettings;
 
 /** A run folder's settings, and its latest checkpoint if it has one. Drops log lines past the checkpoint. */
 export function openRun(run: string): { settings: TrainSettings; from?: Checkpoint; log: GenerationLog[] } {

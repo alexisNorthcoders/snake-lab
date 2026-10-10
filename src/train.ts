@@ -52,9 +52,10 @@ export interface TrainSettings {
   /** Matches each snake plays a generation, all snakes the same ones. */
   matches: number;
   fps: number;
-  /** Glutton fitness: `foodWeight` × score + `tickBonus` × ticks survived, averaged over its matches. */
+  /** Glutton fitness: `foodWeight` × score + `tickBonus` × ticks survived + `gluttonWinBonus` if it won, averaged over its matches. */
   foodWeight: number;
   tickBonus: number;
+  gluttonWinBonus: number;
   /** Survivor fitness: `aliveWeight` × ticks alive + `survivorWinBonus` if it won, averaged over its matches. */
   aliveWeight: number;
   survivorWinBonus: number;
@@ -81,6 +82,7 @@ export const DEFAULT_SETTINGS: Omit<TrainSettings, "personality" | "seed"> = {
   fps: 8,
   foodWeight: 1,
   tickBonus: 0.1,
+  gluttonWinBonus: 200,
   aliveWeight: 1,
   survivorWinBonus: 200,
   killBonus: 100,
@@ -143,7 +145,7 @@ export function checkSettings(settings: TrainSettings) {
   if (!["tanh", "relu", "sigmoid"].includes(settings.activation)) throw new Error(`activation must be tanh, relu or sigmoid, not ${settings.activation}`);
   if (!(settings.mutationRate >= 0 && settings.mutationRate <= 1)) throw new Error(`mutationRate must be in [0, 1], not ${settings.mutationRate}`);
   if (!(settings.fourPlayerShare >= 0 && settings.fourPlayerShare <= 1)) throw new Error(`fourPlayerShare must be in [0, 1], not ${settings.fourPlayerShare}`);
-  const weights = ["foodWeight", "tickBonus", "aliveWeight", "survivorWinBonus", "killBonus", "hunterWinBonus", "foodBonus"] as const;
+  const weights = ["foodWeight", "tickBonus", "gluttonWinBonus", "aliveWeight", "survivorWinBonus", "killBonus", "hunterWinBonus", "foodBonus"] as const;
   for (const name of ["mutationSize", "initialSize", "fps", ...weights] as const) {
     if (!Number.isFinite(settings[name]) || settings[name] < 0) throw new Error(`${name} must be a number of at least 0, not ${settings[name]}`);
   }
@@ -274,10 +276,15 @@ export const ticksSurvived = (match: MatchResult, seat: number) => {
   return death ? death.tick : match.ticks;
 };
 
-/** Glutton fitness: `foodWeight` × score plus `tickBonus` × ticks survived, averaged over the snake's matches. */
-export function gluttonFitness(matches: { match: MatchResult; seat: number }[], weights: Pick<TrainSettings, "foodWeight" | "tickBonus">) {
+/**
+ * Glutton fitness: `foodWeight` × score plus `tickBonus` × ticks survived plus
+ * `gluttonWinBonus` for a win, averaged over the snake's matches. A snake alone
+ * on the board never wins, so the bonus only counts once it has opponents.
+ */
+export function gluttonFitness(matches: { match: MatchResult; seat: number }[], weights: Pick<TrainSettings, "foodWeight" | "tickBonus" | "gluttonWinBonus">) {
   const total = matches.reduce((sum, { match, seat }) =>
-    sum + weights.foodWeight * match.players[seat].score + weights.tickBonus * ticksSurvived(match, seat), 0);
+    sum + weights.foodWeight * match.players[seat].score + weights.tickBonus * ticksSurvived(match, seat) +
+      (won(match, seat) ? weights.gluttonWinBonus : 0), 0);
   return total / matches.length;
 }
 

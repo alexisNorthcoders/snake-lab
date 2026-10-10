@@ -44,7 +44,8 @@ npm run train -- --personality glutton --run runs/glutton-1 --seed 1
 
 This trains a population of brains by neuroevolution. Each generation, every snake plays the same
 seeded matches (both modes, reaction delays 0 to 4) and is scored by its fitness: for a Glutton, its
-food score plus a small bonus for every tick it survives, averaged over its matches. The fittest are
+food score plus a small bonus for every tick it survives and a bigger one for every match it wins,
+averaged over its matches. The fittest are
 kept as they are, and the rest of the next generation is bred from the fittest by crossover and
 mutation. The first generations play alone on the board, then against the rookie, then in the league against varied opponents (some four-player). It trains a Glutton, Survivor or Hunter. It prints the
 best and mean fitness each generation, and at the end how many matches a second and generations an

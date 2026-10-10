@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { loadCandidate } from "../src/gauntlet.ts";
-import { createRun, runFiles, trainRun } from "../src/run.ts";
+import { createRun, runFiles, trainRun, withDefaults } from "../src/run.ts";
 import { DEFAULT_SETTINGS, type TrainSettings } from "../src/train.ts";
 
 const short: TrainSettings = {
@@ -156,5 +156,17 @@ describe("train --resume", () => {
     const { "settings.json": expectedSettings, ...expectedFiles } = expected;
     assert.deepEqual(JSON.parse(settings), JSON.parse(expectedSettings));
     assert.deepEqual(files, expectedFiles);
+  });
+});
+
+describe("withDefaults", () => {
+  const { gluttonWinBonus: _, ...older } = { ...DEFAULT_SETTINGS, personality: "glutton" as const, seed: 1 };
+
+  it("gives a run saved before the Glutton's win bonus none, so it resumes as it was trained", () => {
+    assert.equal(withDefaults(older).gluttonWinBonus, 0);
+  });
+
+  it("keeps a saved win bonus", () => {
+    assert.equal(withDefaults({ ...older, gluttonWinBonus: 200 }).gluttonWinBonus, 200);
   });
 });

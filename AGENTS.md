@@ -205,7 +205,7 @@ Every one is a `train` option (`--help`) and a field of `TrainSettings`; default
 | `activation` | `tanh` | the hidden layers' activation |
 | `matches` | 10 | matches each snake plays a generation: every snake the same ones |
 | `fps` | 8 | ticks per second, which sets a timed round's length |
-| `foodWeight`, `tickBonus` | 1, 0.1 | Glutton fitness: food score × `foodWeight` + ticks survived × `tickBonus`, averaged over the snake's matches |
+| `foodWeight`, `tickBonus`, `gluttonWinBonus` | 1, 0.1, 200 | Glutton fitness: food score × `foodWeight` + ticks survived × `tickBonus` + `gluttonWinBonus` for a win, averaged over the snake's matches. A run saved before the win bonus reads it as 0 |
 | `aliveWeight`, `survivorWinBonus` | 1, 200 | Survivor fitness: ticks alive × `aliveWeight` + `survivorWinBonus` for a win |
 | `killBonus`, `hunterWinBonus`, `foodBonus` | 100, 50, 0.1 | Hunter fitness: kills × `killBonus` + `hunterWinBonus` for a win + food score × `foodBonus` |
 
