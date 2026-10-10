@@ -161,7 +161,7 @@ any hidden sizes. Each `tick` message carries `activations`: `values`, every lay
 `layerValues` for the snake's encoded view when it chose the move that made that tick (the lab copies neither the forward
 pass nor the encoder), and `chosen`, the output (0 left, 1 straight, 2 right) of the move it made. Tick 0 has none. The page
 shades nodes by value, marks the winning output, and redraws the network when the generation's brain changes. It needs
-`snake-colyseus` at `engine-v4.1.0` or later (the lab pins `engine-v4.3.1`; encoder v2 came in `engine-v4.2.0`).
+`snake-colyseus` at `engine-v4.1.0` or later (the lab pins `engine-v4.3.2`; encoder v2 came in `engine-v4.2.0`).
 
 Run it on the same box as the run. It listens on `127.0.0.1`: on the explorer machine open it directly (on a
 port other than go-server's 8080, e.g. `--port 8091`), and from another machine tunnel to it:
