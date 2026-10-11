@@ -66,7 +66,7 @@ class Settings:
     # Survivor reward: a bonus a tick alive, and a bonus for winning
     alive_weight: float = 0.1
     survivor_win_bonus: float = 10.0
-    # Hunter reward: a bonus a kill (a head-on is none), a bonus for winning, and one for food score gained
+    # Hunter reward: a bonus a kill (a head-on only for its survivor), a bonus for winning, and one for food score gained
     kill_bonus: float = 10.0
     hunter_win_bonus: float = 5.0
     food_bonus: float = 0.01

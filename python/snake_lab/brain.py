@@ -7,7 +7,7 @@ from torch import nn
 BRAIN_FORMAT = "snake-brain"
 BRAIN_FORMAT_VERSION = 1
 # The engine's RULES_VERSION the lab is pinned to; tests check it against the package.
-RULES_VERSION = 2
+RULES_VERSION = 3
 
 
 def export_brain(policy: nn.Sequential, encoder: int) -> dict:

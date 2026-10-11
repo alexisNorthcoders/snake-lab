@@ -150,7 +150,7 @@ export interface StepFacts {
   alive: boolean;
   /** Set on the tick it died. */
   death?: { cause: DeathCause; by?: string };
-  /** Snakes it killed this tick, by the lab's kill rule: a head-on kills for neither. */
+  /** Snakes it killed this tick, by the lab's kill rule: a head-on only kills for a snake that survived it. */
   kills: number;
   /** Whether the round is over. */
   over: boolean;
@@ -271,7 +271,7 @@ export class SteppedMatch {
           if (event.player === id) facts.ate++;
         } else if (event.player === id) {
           facts.death = { cause: event.cause, ...(event.by !== undefined && { by: event.by }) };
-        } else if (event.by === id && event.cause !== "head-on") {
+        } else if (event.by === id && (event.cause !== "head-on" || facts.alive)) {
           facts.kills++;
         }
       }

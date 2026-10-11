@@ -90,10 +90,10 @@ The observation is the learner's view, with its reaction delay, through the enco
 | --- | --- |
 | `scoreGained` | the learner's score after the tick minus before it (negative if an endless round drained it) |
 | `ate` | pellets it ate this tick |
-| `kills` | snakes it killed this tick. A head-on collision kills for neither |
+| `kills` | snakes it killed this tick. A head-on kills only for the snake that survives it (the longer one) |
 | `alive` | 1 if the learner is alive after the tick |
 | `deathCause` | set on the tick it died: 0 none, 1 self, 2 body, 3 head-on, 4 starved |
-| `deathBy` | who it ran into: the killer's seat number, or -1 (none: its own doing, starving or nobody's body). In a head-on it names the other snake, though that's no kill |
+| `deathBy` | who it ran into: the killer's seat number, or -1 (none: its own doing, starving or nobody's body). In a head-on it names the other snake: the longest other one, the winner when there is one |
 | `ended` | 1 if the match's episode ended on this tick (see below) |
 | `outcome` | on the last tick: 1 won, 2 lost, 3 drawn; 0 before |
 | `reason` | on the last tick, why it ended: 1 last-standing, 2 time-up, 3 learner-died (see below); 0 before |

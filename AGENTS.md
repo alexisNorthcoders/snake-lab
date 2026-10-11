@@ -107,7 +107,7 @@ Numbers for the Pi are in `docs/benchmarks/2026-09-29-python-env.md`: about 1,50
 
 - **Glutton:** food score gained × `food_weight`, plus `tick_bonus` a tick alive, plus `glutton_win_bonus` on the tick it wins, minus `glutton_draw_penalty` or `glutton_loss_penalty` on the tick it draws or loses (not in the alone stage, where every round is a draw or a loss). The loss penalty must be at least the draw one, or a snake heading for a draw learns to die instead.
 - **Survivor:** `alive_weight` a tick alive, plus `survivor_win_bonus` on the tick the round ends with the learner winning.
-- **Hunter:** `kill_bonus` a kill, plus `hunter_win_bonus` for a win, plus `food_bonus` × food score gained. Kills are the engine's fact, by the lab's rule: a head-on collision is a kill for neither.
+- **Hunter:** `kill_bonus` a kill, plus `hunter_win_bonus` for a win, plus `food_bonus` × food score gained. Kills are the engine's fact, by the lab's rule: a head-on is a kill only for the snake that survives it.
 
 **The league.** After `alone_updates` and `rookie_updates`, `league_updates` (default 0, so add `--league-updates`) checkpoints play the league. PPO has no population, so the opponents are frozen **snapshots of the policy itself** (every earlier checkpoint's `generations/gen-NNNN.json`, played by the engine as brain files) and every roster snake, the rookie included (`node --import tsx src/cli/roster.ts` lists them). Each checkpoint draws its batch's opponents from `(seed, checkpoint)`: `round(four_player_share × num_envs)` matches (default 0.2) have three opponents, the rest one; each opponent is a snapshot half the time (once there is one), else a roster snake. The learner's seat is random. The stage (`alone`, `rookie`, `league`) is in each log line and in `checkpoint.pt`, and a resume lands in the right one and replays byte for byte. `--resume` may change `--rookie-updates` and `--league-updates`. The settings file gets `leagueGenerations` and `fourPlayerShare`.
 
@@ -161,7 +161,7 @@ any hidden sizes. Each `tick` message carries `activations`: `values`, every lay
 `layerValues` for the snake's encoded view when it chose the move that made that tick (the lab copies neither the forward
 pass nor the encoder), and `chosen`, the output (0 left, 1 straight, 2 right) of the move it made. Tick 0 has none. The page
 shades nodes by value, marks the winning output, and redraws the network when the generation's brain changes. It needs
-`snake-colyseus` at `engine-v4.1.0` or later (the lab pins `engine-v4.3.2`; encoder v2 came in `engine-v4.2.0`).
+`snake-colyseus` at `engine-v4.1.0` or later (the lab pins `engine-v5.0.0`, rules v3, where the longer snake wins a head-on; encoder v2 came in `engine-v4.2.0`).
 
 Run it on the same box as the run. It listens on `127.0.0.1`: on the explorer machine open it directly (on a
 port other than go-server's 8080, e.g. `--port 8091`), and from another machine tunnel to it:
@@ -217,9 +217,10 @@ against the rookie (see `docs/benchmarks/`).
 
 ## Personalities and stages
 
-A win is the engine's `winnerId`. A kill is a `died` event whose `by` is the snake, except a head-on
-collision (`cause: "head-on"`): the engine names each snake the other as `by`, but both die, so it
-counts as a kill for neither.
+A win is the engine's `winnerId`. A kill is a `died` event whose `by` is the snake. Since rules v3 the
+longer snake wins a head-on (`cause: "head-on"`) and that's its kill; when they're the same length both
+die, each naming the other as `by`, so it counts for neither: a head-on is only a kill for a snake that
+didn't die on that tick.
 
 Generations go through three **stages**, named in each log line and in the checkpoint (which holds
 the stage of the generation it carries on with, so a resume lands in the right one):

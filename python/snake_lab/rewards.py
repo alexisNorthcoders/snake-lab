@@ -43,7 +43,7 @@ def survivor_reward(facts: Facts, alive_weight: float = 0.1, win_bonus: float = 
 def hunter_reward(facts: Facts, kill_bonus: float = 10.0, win_bonus: float = 5.0, food_bonus: float = 0.01) -> np.ndarray:
     """A big bonus a kill, a win bonus at the end, and a small one for food score gained.
 
-    `kills` is the engine's count by the lab's rule: a head-on collision kills for neither snake, so it's no kill here.
+    `kills` is the engine's count by the lab's rule: a head-on kills only for the snake that survives it (the longer one).
     """
     won = (facts["ended"] == 1) & (facts["outcome"] == 1)
     return (kill_bonus * facts["kills"] + win_bonus * won + food_bonus * facts["scoreGained"]).astype(np.float32)

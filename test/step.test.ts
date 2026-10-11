@@ -114,14 +114,24 @@ describe("SteppedMatch", () => {
     });
 
     it("report a mutual head-on as a death for both and a kill for neither", () => {
-      // Seed 1, endless: the two rookies meet head-on on tick 18.
+      // Seed 2, endless: the two rookies meet head-on on tick 7, the same length.
       for (const learner of [0, 1]) {
-        const { facts } = drive(options({ seed: 1 }), learner, rookieDecider);
+        const { facts } = drive(options({ seed: 2 }), learner, rookieDecider);
         const last = facts.at(-1)!;
         assert.equal(last.death?.cause, "head-on");
         assert.equal(last.death?.by, `seat${1 - learner}`);
         assert.equal(facts.reduce((sum, f) => sum + f.kills, 0), 0);
       }
+    });
+
+    it("report a head-on won by the longer snake as its kill", () => {
+      // Seed 1, endless: seat 0 is the longer when they meet head-on on tick 18.
+      const winner = drive(options({ seed: 1 }), 0, rookieDecider).facts;
+      assert.equal(winner.reduce((sum, f) => sum + f.kills, 0), 1);
+      assert.equal(winner.at(-1)!.outcome, "won");
+      const loser = drive(options({ seed: 1 }), 1, rookieDecider).facts;
+      assert.deepEqual(loser.at(-1)!.death, { cause: "head-on", by: "seat0" });
+      assert.equal(loser.reduce((sum, f) => sum + f.kills, 0), 0);
     });
 
     it("report a death of one's own doing, with no killer", () => {
@@ -140,7 +150,7 @@ describe("SteppedMatch", () => {
       assert.ok(facts.slice(0, -1).every((f) => !f.over && f.outcome === undefined && f.reason === undefined));
 
       assert.equal(drive(options({ seed: 6 }), 0, rookieDecider).facts.at(-1)!.outcome, "lost");
-      assert.equal(drive(options({ seed: 1 }), 0, rookieDecider).facts.at(-1)!.outcome, "drawn");
+      assert.equal(drive(options({ seed: 2 }), 0, rookieDecider).facts.at(-1)!.outcome, "drawn");
       const timed = drive(options({ seed: 3, mode: "timed", fps: 0.05 }), 0, rookieDecider);
       assert.equal(timed.facts.at(-1)!.reason, "time-up");
     });

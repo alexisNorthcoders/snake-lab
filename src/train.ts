@@ -292,12 +292,15 @@ export function gluttonFitness(matches: { match: MatchResult; seat: number }[], 
 const won = (match: MatchResult, seat: number) => match.result.winnerId === `seat${seat}`;
 
 /**
- * Kills by the snake in `seat`: `died` events whose `by` is it. A head-on
- * collision names each snake the other as `by`, but both die, so it counts for neither.
+ * Kills by the snake in `seat`: `died` events whose `by` is it. The longer
+ * snake wins a head-on and kills; when both die, each names the other as
+ * `by`, so a head-on only counts for a snake that didn't die on that tick.
  */
 export const kills = (match: MatchResult, seat: number) => {
   if (!match.events) throw new Error("kills need the match's events: play it with keepEvents");
-  return match.events.filter((e) => e.kind === "died" && e.by === `seat${seat}` && e.cause !== "head-on").length;
+  const id = `seat${seat}`;
+  const diedOn = new Set(match.events.flatMap((e) => (e.kind === "died" && e.player === id ? [e.tick] : [])));
+  return match.events.filter((e) => e.kind === "died" && e.by === id && (e.cause !== "head-on" || !diedOn.has(e.tick))).length;
 };
 
 type Played = { match: MatchResult; seat: number }[];

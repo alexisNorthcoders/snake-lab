@@ -122,7 +122,7 @@ describe("survivor and hunter fitness", () => {
     ...overrides
   });
 
-  it("counts a kill from died.by, and a mutual head-on for neither", () => {
+  it("counts a kill from died.by, a head-on for its survivor, and a mutual head-on for neither", () => {
     const events = [
       died("seat1", "body", 50, "seat0"),
       died("seat2", "self", 60),
@@ -134,6 +134,9 @@ describe("survivor and hunter fitness", () => {
     assert.equal(kills(m, 3), 0);
     assert.equal(kills(m, 1), 0);
     assert.equal(kills(match({ events: [died("seat1", "head-on", 5, "seat0"), died("seat0", "head-on", 5, "seat1")] }), 0), 0);
+    const won = match({ events: [died("seat1", "head-on", 5, "seat0"), died("seat0", "body", 9, "seat2")] });
+    assert.equal(kills(won, 0), 1);
+    assert.equal(kills(won, 1), 0);
   });
 
   it("survivor: ticks alive plus a win bonus, averaged over the matches", () => {
